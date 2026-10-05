@@ -113,8 +113,15 @@ enum LiveTranscription {
 
             let before = confirmer.confirmedEnd
             var (confirmed, _) = confirmer.ingest(decoded)
-            if buffer.count - clamp(Int((confirmer.confirmedEnd * sampleRate).rounded()) - Int(bufferStart), buffer.count) > stallLimit {
+            let unconfirmed = buffer.count - clamp(Int((confirmer.confirmedEnd * sampleRate).rounded()) - Int(bufferStart), buffer.count)
+            let stalled = unconfirmed > stallLimit
+            if stalled {
+                // Decodes keep disagreeing (Whisper re-splits the same speech differently),
+                // so take this decode as it is rather than let the buffer outgrow the window.
                 confirmed += confirmer.confirmAllButLast()
+                if confirmed.isEmpty {
+                    confirmed = confirmer.flush()
+                }
             }
             let progressed = confirmer.confirmedEnd > before
 
@@ -124,14 +131,12 @@ enum LiveTranscription {
             }
             emit(confirmed)
 
-            if confirmed.isEmpty, ended || buffer.count > stallLimit {
-                // Nothing usable in this window (music, noise): move past it so the
-                // buffer can't grow without bound and the loop always finishes.
-                if let lastStart = decoded.last?.start, lastStart > offset, !ended {
-                    trim(to: lastStart)
-                } else {
-                    trim(to: offset + Double(windowCount) / sampleRate)
-                }
+            if confirmed.isEmpty, ended || stalled {
+                // Whisper found no new speech in this window (music, noise): move past it
+                // so the buffer can't grow without bound and the loop always finishes.
+                // Keep the last second while live in case a word is just starting.
+                let keep = ended ? 0 : 1.0
+                trim(to: offset + Double(windowCount) / sampleRate - keep)
             } else {
                 trim(to: confirmer.confirmedEnd)
             }

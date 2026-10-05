@@ -82,6 +82,15 @@ public final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         )
     }
 
+    /// Live windows usually start mid-sentence, where the first token is unlikely by nature.
+    /// WhisperKit's first-token check then rejects good text, retries up to temperature 1.0
+    /// (slow) and returns nothing, so it is off for live decoding.
+    private static var liveDecodingOptions: DecodingOptions {
+        var options = decodingOptions
+        options.firstTokenLogProbThreshold = nil
+        return options
+    }
+
     private func loaded() throws -> WhisperKit {
         guard let whisper = lock.withLock({ whisper }) else { throw TranscriberError.notLoaded }
         return whisper
@@ -89,7 +98,7 @@ public final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
 
     private func decode(_ samples: [Float]) async throws -> [Segment] {
         let whisper = try loaded()
-        let results = try await whisper.transcribe(audioArray: samples, decodeOptions: Self.decodingOptions)
+        let results = try await whisper.transcribe(audioArray: samples, decodeOptions: Self.liveDecodingOptions)
         return Self.segments(from: results)
     }
 

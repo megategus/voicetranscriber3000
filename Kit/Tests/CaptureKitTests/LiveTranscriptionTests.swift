@@ -26,14 +26,19 @@ private let fakeDecode: LiveTranscription.Decode = { samples in
     return result
 }
 
-private func audio(seconds: Int) -> AsyncStream<AudioChunk> {
+/// `holdOpen` keeps the stream unfinished for a while after the last chunk, like a live
+/// session that is still running.
+private func audio(seconds: Int, holdOpen: Duration = .zero) -> AsyncStream<AudioChunk> {
     AsyncStream { continuation in
         let chunk = Int(sampleRate / 2)
         for start in stride(from: 0, to: seconds * Int(sampleRate), by: chunk) {
             let samples = (start..<start + chunk).map { Float($0) }
             continuation.yield(AudioChunk(samples: samples, startSample: Int64(start)))
         }
-        continuation.finish()
+        Task {
+            try? await Task.sleep(for: holdOpen)
+            continuation.finish()
+        }
     }
 }
 
@@ -64,6 +69,29 @@ private func finals(_ events: AsyncStream<TranscriptEvent>) async -> [Segment] {
     let segments = await finals(LiveTranscription.run(audio(seconds: 90), decode: slowFirst))
     #expect(segments.map(\.text) == (0..<30).map { "word \($0)" })
     #expect(zip(segments, segments.dropFirst()).allSatisfy { $0.start < $1.start })
+}
+
+/// Real Whisper often re-splits the same speech differently on every decode, so two decodes
+/// never agree, and may return one long segment for the whole window. Text must still come
+/// out, not be thrown away when the buffer passes the stall limit.
+@Test func liveLoopEmitsEverythingWhenDecodesNeverAgree() async {
+    let calls = Counter()
+    let restless: LiveTranscription.Decode = { samples in
+        let call = await calls.next()
+        if call == 0 {
+            try await Task.sleep(for: .milliseconds(200))
+        }
+        guard let firstValue = samples.first else { return [] }
+        let first = Int(firstValue / Float(sampleRate))
+        let seconds = samples.count / Int(sampleRate)
+        let words = (first..<first + seconds).map { "w\($0)" }.joined(separator: " ")
+        // Never the same twice: the start wobbles by more than the 0.5 s tolerance.
+        let wobble = call.isMultiple(of: 2) ? 0.0 : 0.6
+        return [Segment(start: wobble, end: Double(seconds), text: words)]
+    }
+    let segments = await finals(LiveTranscription.run(audio(seconds: 60, holdOpen: .seconds(1)), decode: restless))
+    let words = segments.flatMap { $0.text.split(separator: " ").map(String.init) }
+    #expect(words == (0..<60).map { "w\($0)" })
 }
 
 private actor Counter {
