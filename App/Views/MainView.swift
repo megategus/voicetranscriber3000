@@ -6,7 +6,11 @@ import TranscriptCore
 struct MainView: View {
     let speechModel: SpeechModel
     let session: SessionController
+    let settings: AppSettings
     @State private var sourceKind: AudioSourceKind = .computerAudio
+    @State private var unfinished: [URL] = []
+    @State private var showRecovery = false
+    @State private var floatingPanel = FloatingPanelController()
 
     var body: some View {
         VStack(spacing: 12) {
@@ -23,6 +27,42 @@ struct MainView: View {
             footer
         }
         .padding()
+        .task { findUnfinished() }
+        .sheet(isPresented: $showRecovery) {
+            RecoveryView(
+                folders: unfinished,
+                canRecover: speechModel.isLoaded && !session.isBusy,
+                recover: { folder in
+                    unfinished.removeAll { $0 == folder }
+                    showRecovery = false
+                    Task { await session.recover(folder) }
+                },
+                ignore: { folder in
+                    settings.ignoreRecovery(folder)
+                    unfinished.removeAll { $0 == folder }
+                    showRecovery = !unfinished.isEmpty
+                },
+                close: { showRecovery = false }
+            )
+        }
+        .onChange(of: wantsFloatingPanel, initial: true) { _, show in
+            if show {
+                floatingPanel.show(session: session)
+            } else {
+                floatingPanel.hide()
+            }
+        }
+    }
+
+    private var wantsFloatingPanel: Bool {
+        settings.showFloatingPanel && session.state == .recording
+    }
+
+    private func findUnfinished() {
+        let ignored = Set(settings.ignoredRecoveries)
+        unfinished = SessionRecovery.unfinished(in: settings.outputFolder)
+            .filter { !ignored.contains($0.standardizedFileURL.path) }
+        showRecovery = !unfinished.isEmpty
     }
 
     // MARK: - Top row
@@ -43,6 +83,9 @@ struct MainView: View {
                 Button("Stop") { Task { await session.stop() } }
                     .controlSize(.large)
                     .keyboardShortcut(.defaultAction)
+                Button(session.isPaused ? "Resume" : "Pause") { session.togglePause() }
+                    .controlSize(.large)
+                    .help("Skip an ad or interruption: paused audio is not recorded or transcribed (⇧⌘P)")
                 Text(formatTimestamp(session.elapsed))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -60,7 +103,16 @@ struct MainView: View {
             }
             .help("Settings")
 
-            if session.isLagging {
+            if session.isPaused {
+                Label("Paused · \(formatTimestamp(session.skippedDuration)) skipped", systemImage: "pause.circle.fill")
+                    .font(.callout)
+                    .monospacedDigit()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.orange.opacity(0.2), in: Capsule())
+            }
+
+            if session.isLagging, !session.isPaused {
                 Label("Transcription lagging", systemImage: "tortoise")
                     .font(.callout)
                     .padding(.horizontal, 8)
@@ -92,7 +144,7 @@ struct MainView: View {
 
     @ViewBuilder
     private var banners: some View {
-        if session.state == .recording, session.noAudio {
+        if session.state == .recording, session.noAudio, !session.isPaused {
             Label("No audio detected — check the source.", systemImage: "speaker.slash")
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
@@ -112,10 +164,18 @@ struct MainView: View {
         case .done(let info):
             done(info)
         case .failed(let message):
-            Text(message)
-                .foregroundStyle(.red)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+            HStack {
+                Text(message)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let kind = session.blockedPermission {
+                    Button("Open System Settings") {
+                        NSWorkspace.shared.open(SystemPermissions.settingsURL(for: kind))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

@@ -79,12 +79,18 @@ final class FakeTranscriber: Transcriber, @unchecked Sendable {
 
     func load(progress: @escaping @Sendable (Double) -> Void) async throws {}
 
+    private var _received: [AudioChunk] = []
+    /// Every chunk the live pass was given.
+    var received: [AudioChunk] { lock.withLock { _received } }
+
     func transcribe(_ audio: AsyncStream<AudioChunk>) -> AsyncStream<TranscriptEvent> {
         let events = liveEvents
         return AsyncStream { continuation in
             Task {
                 events.forEach { continuation.yield($0) }
-                for await _ in audio {}
+                for await chunk in audio {
+                    self.lock.withLock { self._received.append(chunk) }
+                }
                 continuation.finish()
             }
         }
@@ -191,3 +197,13 @@ final class HTTPStub: URLProtocol, @unchecked Sendable {
 /// at a time.
 @Suite(.serialized)
 struct StubbedNetworkTests {}
+
+struct FakePermissions: PermissionChecking {
+    var microphoneStatus: PermissionStatus = .granted
+    var screenStatus: PermissionStatus = .granted
+    var grantOnRequest = false
+
+    func microphone() async -> PermissionStatus { microphoneStatus }
+    func screenRecording() async -> PermissionStatus { screenStatus }
+    func request(_ kind: AudioSourceKind) async -> Bool { grantOnRequest }
+}

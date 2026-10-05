@@ -30,3 +30,11 @@ private func freshDefaults() -> UserDefaults {
     #expect(reloaded.retranscribeAfterStop == false)
     #expect(reloaded.showFloatingPanel == true)
 }
+
+@MainActor @Test func ignoredRecoveriesPersist() {
+    let defaults = freshDefaults()
+    let settings = AppSettings(defaults: defaults)
+    #expect(settings.ignoredRecoveries.isEmpty)
+    settings.ignoreRecovery(URL(fileURLWithPath: "/tmp/T/2026-10-05 09-00", isDirectory: true))
+    #expect(AppSettings(defaults: defaults).ignoredRecoveries == ["/tmp/T/2026-10-05 09-00"])
+}

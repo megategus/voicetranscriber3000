@@ -26,7 +26,8 @@ struct VoiceTranscriberApp: App {
             notes: nil,
             retranscribe: { settings.retranscribeAfterStop },
             // The key is read from the Keychain for each request, never stored elsewhere.
-            claude: ClaudeClient(apiKey: { KeychainStore.apiKey.load() })
+            claude: ClaudeClient(apiKey: { KeychainStore.apiKey.load() }),
+            permissions: SystemPermissions()
         )
         // Claude writes the notes; a missing key is reported on the done screen, and
         // Generate notes works once a key is added.
@@ -36,12 +37,21 @@ struct VoiceTranscriberApp: App {
 
     var body: some Scene {
         WindowGroup("VoiceTranscriber") {
-            MainView(speechModel: speechModel, session: session)
+            MainView(speechModel: speechModel, session: session, settings: settings)
                 .frame(minWidth: 820, minHeight: 480)
                 .task { await speechModel.load() }
                 .onChange(of: settings.outputFolder, initial: true) { _, folder in
                     session.root = folder
                 }
+        }
+        .commands {
+            CommandMenu("Session") {
+                Button(session.isPaused ? "Resume Transcription" : "Pause Transcription") {
+                    session.togglePause()
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .disabled(session.state != .recording)
+            }
         }
         Settings {
             SettingsView(settings: settings)

@@ -89,6 +89,11 @@ enum AudioSourceKind { case computerAudio, microphone }
    the session folder named `yyyy-MM-dd HH-mm`. Start source, recorder,
    and transcriber.
 3. **Recording.** Live loop (section 4). Ask panel is enabled.
+   **Pause / Resume** (button, floating panel, ⇧⌘P), added on request for ads
+   and sudden interruptions: while paused, audio is discarded — not
+   recorded, not transcribed, not counted in the timer — so it never reaches
+   `audio.m4a`, either transcript, or the notes, and timestamps still match
+   `audio.m4a`. The no-audio banner and lag badge are off while paused.
 4. **Stop → Finalizing.**
    1. Stop the source; close `audio.caf`; convert to `audio.m4a`; delete
       the `.caf` after a successful conversion.

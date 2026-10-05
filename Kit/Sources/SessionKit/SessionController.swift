@@ -74,8 +74,12 @@ public final class SessionController {
     public private(set) var partial = ""
     public private(set) var isLagging = false
     public private(set) var noAudio = false
-    /// Seconds of audio recorded in this session.
+    /// Seconds of audio recorded in this session (paused time not included).
     public private(set) var elapsed: TimeInterval = 0
+    /// While paused, audio is discarded: not recorded, not transcribed, not timed.
+    public private(set) var isPaused = false
+    /// Seconds of audio discarded while paused.
+    public private(set) var skippedDuration: TimeInterval = 0
 
     /// Settable so Settings can change them between sessions.
     public var root: URL
@@ -89,11 +93,14 @@ public final class SessionController {
     public private(set) var isAsking = false
     /// Characters of notes received so far, shown while writing notes.
     public private(set) var notesCharacters = 0
+    /// The source whose permission blocked the last Start, for the Open System Settings button.
+    public private(set) var blockedPermission: AudioSourceKind?
 
     private let transcriber: any Transcriber
     private let makeSource: (AudioSourceKind) -> any AudioSource
     private let retranscribe: () -> Bool
     private let clock: () -> Date
+    private let permissions: (any PermissionChecking)?
 
     // Recording
     private var source: (any AudioSource)?
@@ -106,6 +113,8 @@ public final class SessionController {
     private var lastSpeech: TimeInterval?
     private var silenceStart: TimeInterval = 0
     private var lastLoudWall = Date()
+    private var recordedSamples: Int64 = 0
+    private var skippedSamples: Int64 = 0
 
     // Asking
     private var lastQuestionTime: TimeInterval?
@@ -125,8 +134,10 @@ public final class SessionController {
         notes: (any NotesMaking)?,
         retranscribe: @escaping () -> Bool,
         clock: @escaping () -> Date = Date.init,
-        claude: ClaudeClient? = nil
+        claude: ClaudeClient? = nil,
+        permissions: (any PermissionChecking)? = nil
     ) {
+        self.permissions = permissions
         self.root = root
         assistant = claude.map { [store] in Assistant(client: $0, store: store) }
         self.transcriber = transcriber
@@ -223,6 +234,18 @@ public final class SessionController {
         guard !isBusy else { return }
         resetLiveState()
         await store.reset()
+        blockedPermission = nil
+        if let permissions {
+            var status = await permissions.status(for: kind)
+            if status == .notDetermined {
+                status = await permissions.request(kind) ? .granted : .denied
+            }
+            guard status == .granted else {
+                blockedPermission = kind
+                state = .failed(SystemPermissions.deniedMessage(for: kind))
+                return
+            }
+        }
         let source = makeSource(kind)
         do {
             // Start the source first so a denied permission leaves no empty folder;
@@ -245,9 +268,9 @@ public final class SessionController {
             let (toTranscriber, feed) = AsyncStream<AudioChunk>.makeStream(bufferingPolicy: .unbounded)
             pump = Task { [weak self] in
                 for await chunk in chunks {
-                    feed.yield(chunk)
-                    try? await recorder.write(chunk)
-                    self?.observe(chunk)
+                    guard let admitted = self?.admit(chunk) else { continue }
+                    feed.yield(admitted)
+                    try? await recorder.write(admitted)
                 }
                 feed.finish()
             }
@@ -269,8 +292,29 @@ public final class SessionController {
         }
     }
 
+    /// Stops recording and transcribing until `resume`, e.g. during an ad. The paused audio
+    /// is dropped, so the recording, transcripts, and notes skip it entirely.
+    public func pause() {
+        guard state == .recording else { return }
+        isPaused = true
+        noAudio = false
+        isLagging = false
+    }
+
+    public func resume() {
+        guard state == .recording, isPaused else { return }
+        isPaused = false
+        silenceStart = elapsed
+        lastLoudWall = clock()
+    }
+
+    public func togglePause() {
+        isPaused ? resume() : pause()
+    }
+
     public func stop() async {
         guard state == .recording, let source, let recorder, let writer else { return }
+        isPaused = false
         state = .finalizing(.savingAudio)
         watchdog?.cancel()
         await source.stop()
@@ -442,6 +486,21 @@ public final class SessionController {
         }
     }
 
+    /// Drops a chunk while paused; otherwise gives it the next position in the recording
+    /// (so time skips the paused stretch) and updates the level monitor.
+    private func admit(_ chunk: AudioChunk) -> AudioChunk? {
+        let count = Int64(chunk.samples.count)
+        if isPaused {
+            skippedSamples += count
+            skippedDuration = Double(skippedSamples) / sampleRate
+            return nil
+        }
+        let admitted = AudioChunk(samples: chunk.samples, startSample: recordedSamples)
+        recordedSamples += count
+        observe(admitted)
+        return admitted
+    }
+
     private func observe(_ chunk: AudioChunk) {
         elapsed = chunk.endTime
         if AudioLevel.rms(chunk.samples) >= HallucinationFilter.speechThreshold {
@@ -466,7 +525,7 @@ public final class SessionController {
 
     /// Catches a source that stops delivering audio entirely.
     private func checkWallClockSilence() {
-        if state == .recording, clock().timeIntervalSince(lastLoudWall) >= Self.noAudioThreshold {
+        if state == .recording, !isPaused, clock().timeIntervalSince(lastLoudWall) >= Self.noAudioThreshold {
             noAudio = true
         }
     }
@@ -484,6 +543,10 @@ public final class SessionController {
         isLagging = false
         noAudio = false
         elapsed = 0
+        isPaused = false
+        skippedDuration = 0
+        recordedSamples = 0
+        skippedSamples = 0
         lastFinalEnd = 0
         lastSpeech = nil
         silenceStart = 0
