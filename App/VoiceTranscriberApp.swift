@@ -48,12 +48,14 @@ struct VoiceTranscriberApp: App {
                     session.assistant?.configuration = configuration
                 }
                 .onChange(of: settings.appearance, initial: true) { _, appearance in
-                    // App-wide, so Settings and the floating panel follow too.
+                    // App-wide, so Settings and the floating panel follow too. Pink is a light
+                    // palette, so system controls stay in light appearance under it.
                     NSApp.appearance = switch appearance {
                     case .system: nil
-                    case .light: NSAppearance(named: .aqua)
+                    case .light, .pink: NSAppearance(named: .aqua)
                     case .dark: NSAppearance(named: .darkAqua)
                     }
+                    ThemeStore.shared.palette = appearance == .pink ? .pink : .standard
                 }
         }
         .commands {

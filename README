@@ -34,7 +34,9 @@ your Personal Team (or set `DEVELOPMENT_TEAM` in `project.yml`), then Run (⌘R)
 The interface uses a warm parchment palette (tokens in `App/Design/Theme.swift`): ink text,
 hairline warm-gray borders, softly rounded corners, and one deep teal reserved for selected
 states. A warm charcoal dark theme follows macOS by default; Settings → Appearance can force
-Light or Dark.
+Light or Dark, or switch to Pink — a rose palette (#FADAD9 #F3C3C5 #E9ABAE #E0959C #D78289
+#CE6F79 #C65C69) with #C65C69 buttons, plus a light card tint and deep rose text added for
+readable contrast.
 
 The Start / Stop / Pause / Resume buttons adapt the "Skiper 25" micro-interaction from
 [Skiper UI](https://gxuri.me) by @gurvinder-singh02 (springy padding on hover and press, a

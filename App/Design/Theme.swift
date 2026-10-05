@@ -1,33 +1,98 @@
 import AppKit
 import SwiftUI
 
-/// Design tokens: a warm parchment canvas (warm charcoal in dark mode), ink text, hairline
-/// warm-gray borders, and a single deep teal used only for selected states and the
-/// focused-input glow. Flat surfaces, softly rounded corners, weights 400–500 only, compact
-/// 4 pt spacing.
+/// One complete set of theme colors.
+struct Palette {
+    var parchment: Color   // canvas
+    var softPaper: Color   // cards, one step above the canvas
+    var warmMist: Color    // hairline borders
+    var ash: Color         // helper text, timestamps
+    var graphite: Color    // secondary text and icons
+    var ink: Color         // primary text
+    var teal: Color        // selected-state fill (chips)
+    var onTeal: Color      // text on the selected fill
+    var fill: Color        // filled buttons
+    var fillHover: Color   // filled buttons on hover/press
+    var onFill: Color      // text and waveform on filled buttons
+    var accent: Color      // system controls: toggles, progress bars, pickers
+    var focusRing: Color   // focused input outline
+    var cardEdge: Color    // card outline
+    var hoverFill: Color   // chips and ghost buttons on hover/press
+
+    /// Parchment in light mode, warm charcoal in dark mode (follows the window appearance).
+    static let standard = Palette(
+        parchment: Color(light: 0xFAF8F5, dark: 0x1B1A17),
+        softPaper: Color(light: 0xFDFBFA, dark: 0x24231F),
+        warmMist: Color(light: 0xD1D1CD, dark: 0x3A3833),
+        ash: Color(light: 0x92918B, dark: 0x7F7D76),
+        graphite: Color(light: 0x72706B, dark: 0xA9A69E),
+        ink: Color(light: 0x27251E, dark: 0xECE9E2),
+        teal: Color(light: 0x016A71, dark: 0x13818A),
+        onTeal: .white,
+        fill: Color(light: 0x27251E, dark: 0xECE9E2),
+        fillHover: Color(light: 0x27251E, dark: 0xECE9E2),
+        onFill: Color(light: 0xFAF8F5, dark: 0x1B1A17),
+        accent: Color(light: 0x016A71, dark: 0x13818A),
+        focusRing: Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.isDark ? NSColor(hex: 0x2BA3AC) : NSColor(hex: 0x016A71).withAlphaComponent(0.5)
+        }),
+        cardEdge: Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.isDark ? NSColor(hex: 0x312F2B) : .clear
+        }),
+        hoverFill: Color(light: 0xD1D1CD, dark: 0x3A3833).opacity(0.35)
+    )
+
+    /// Rose palette: #FADAD9 #F3C3C5 #E9ABAE #E0959C #D78289 #CE6F79 #C65C69, plus a light
+    /// card tint and deep rose text tones (the palette has no dark shade for readable text).
+    static let pink = Palette(
+        parchment: Color(hex: 0xFADAD9),
+        softPaper: Color(hex: 0xFDEFEE),
+        warmMist: Color(hex: 0xE9ABAE),
+        ash: Color(hex: 0xC65C69),
+        graphite: Color(hex: 0x7E3440),
+        ink: Color(hex: 0x3D1A20),
+        teal: Color(hex: 0xE0959C),
+        onTeal: Color(hex: 0x3D1A20),
+        fill: Color(hex: 0xC65C69),
+        fillHover: Color(hex: 0xCE6F79),
+        onFill: .white,
+        accent: Color(hex: 0xC65C69),
+        focusRing: Color(hex: 0xD78289),
+        cardEdge: Color(hex: 0xF3C3C5),
+        hoverFill: Color(hex: 0xF3C3C5)
+    )
+}
+
+/// The active palette. Views read it through `Theme`, so Observation redraws them when the
+/// Appearance setting switches palettes.
+@MainActor @Observable
+final class ThemeStore {
+    static let shared = ThemeStore()
+    var palette = Palette.standard
+}
+
+/// Design tokens: a warm canvas, ink text, hairline borders, softly rounded corners, and a
+/// single accent used only for selected states and the focused-input glow. Flat surfaces,
+/// weights 400–500 only, compact 4 pt spacing. Colors come from the active `Palette`.
+@MainActor
 enum Theme {
-    // Colors — each has a light (parchment) and a dark (warm charcoal) value.
-    static let parchment = Color(light: 0xFAF8F5, dark: 0x1B1A17)   // canvas
-    static let softPaper = Color(light: 0xFDFBFA, dark: 0x24231F)   // cards, one step above the canvas
-    static let warmMist = Color(light: 0xD1D1CD, dark: 0x3A3833)    // hairline borders
-    static let ash = Color(light: 0x92918B, dark: 0x7F7D76)         // helper text, timestamps
-    static let graphite = Color(light: 0x72706B, dark: 0xA9A69E)    // secondary text and icons
-    static let ink = Color(light: 0x27251E, dark: 0xECE9E2)         // primary text, filled buttons
-    static let teal = Color(light: 0x016A71, dark: 0x13818A)        // selected state only
-    /// Text on a filled (ink) button: the canvas color, so the pair inverts in dark mode.
-    static let onInk = parchment
-    /// Card outline: invisible on parchment, a faint line on charcoal.
-    static let cardEdge = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(hex: 0x312F2B) : .clear
-    })
-    /// Focused input outline: soft teal on parchment, a brighter teal on charcoal.
-    static let focusRing = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(hex: 0x2BA3AC)
-            : NSColor(hex: 0x016A71).withAlphaComponent(0.5)
-    })
-    /// Text on a teal fill.
-    static let onTeal = Color.white
+    private static var palette: Palette { ThemeStore.shared.palette }
+
+    static var parchment: Color { palette.parchment }
+    static var softPaper: Color { palette.softPaper }
+    static var warmMist: Color { palette.warmMist }
+    static var ash: Color { palette.ash }
+    static var graphite: Color { palette.graphite }
+    static var ink: Color { palette.ink }
+    static var teal: Color { palette.teal }
+    static var onTeal: Color { palette.onTeal }
+    static var fill: Color { palette.fill }
+    static var fillHover: Color { palette.fillHover }
+    static var onInk: Color { palette.onFill }
+    static var accent: Color { palette.accent }
+    static var focusRing: Color { palette.focusRing }
+    static var cardEdge: Color { palette.cardEdge }
+    static var hoverFill: Color { palette.hoverFill }
 
     // Radii: softly rounded rectangles rather than pills.
     static let cardRadius: CGFloat = 10
@@ -63,9 +128,13 @@ extension Color {
     /// A color that follows the light/dark appearance of the view it is drawn in.
     init(light: UInt32, dark: UInt32) {
         self.init(nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(hex: dark) : NSColor(hex: light)
+            appearance.isDark ? NSColor(hex: dark) : NSColor(hex: light)
         })
     }
+}
+
+extension NSAppearance {
+    var isDark: Bool { bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
 }
 
 extension NSColor {
@@ -79,6 +148,7 @@ extension NSColor {
     }
 }
 
+@MainActor
 extension View {
     /// A card surface: soft paper, 10 pt corners, the system's single subtle shadow, and a
     /// hairline edge that only shows in dark mode (where the shadow can't).
@@ -99,7 +169,7 @@ extension View {
         self
             .font(Theme.body)
             .foregroundStyle(Theme.ink)
-            .tint(Theme.teal)
+            .tint(Theme.accent)
             .background(Theme.parchment)
     }
 }

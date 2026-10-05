@@ -72,7 +72,8 @@ struct PillButtonStyle: ButtonStyle {
                 .padding(.vertical, vertical)
                 .padding(.horizontal, horizontal)
                 .background {
-                    Theme.shape(Theme.controlRadius).fill(kind == .filled ? Theme.ink : Theme.softPaper)
+                    Theme.shape(Theme.controlRadius)
+                        .fill(kind == .filled ? (expanded ? Theme.fillHover : Theme.fill) : Theme.softPaper)
                 }
                 .overlay {
                     if kind == .outlined {
@@ -106,7 +107,7 @@ struct GhostButtonStyle: ButtonStyle {
                 .padding(.horizontal, 12)
                 .background(
                     Theme.shape(Theme.buttonRadius)
-                        .fill(configuration.isPressed ? Theme.warmMist.opacity(0.35) : .clear)
+                        .fill(configuration.isPressed ? Theme.hoverFill : .clear)
                 )
                 .overlay(Theme.shape(Theme.buttonRadius).strokeBorder(Theme.warmMist))
                 .contentShape(Theme.shape(Theme.buttonRadius))
@@ -138,7 +139,7 @@ struct ChipButtonStyle: ButtonStyle {
                 .padding(.horizontal, 12)
                 .background {
                     Theme.shape(Theme.chipRadius)
-                        .fill(selected ? Theme.teal : (hovering || configuration.isPressed ? Theme.warmMist.opacity(0.35) : .clear))
+                        .fill(selected ? Theme.teal : (hovering || configuration.isPressed ? Theme.hoverFill : .clear))
                 }
                 .overlay {
                     if !selected { Theme.shape(Theme.chipRadius).strokeBorder(Theme.warmMist) }

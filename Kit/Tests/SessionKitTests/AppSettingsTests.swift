@@ -51,5 +51,8 @@ private func freshDefaults() -> UserDefaults {
     #expect(settings.appearance == .system)
     settings.appearance = .dark
     #expect(AppSettings(defaults: defaults).appearance == .dark)
-    #expect(Appearance.allCases == [.system, .light, .dark])
+    settings.appearance = .pink
+    #expect(AppSettings(defaults: defaults).appearance == .pink)
+    #expect(Appearance.allCases == [.system, .light, .dark, .pink])
+    #expect(Appearance.pink.displayName == "Pink")
 }

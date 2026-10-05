@@ -2,15 +2,16 @@ import AssistantKit
 import Foundation
 import Observation
 
-/// Light or dark look; `system` follows macOS.
+/// The app's look: `system` follows macOS light/dark; `pink` is a light rose palette.
 public enum Appearance: String, CaseIterable, Sendable {
-    case system, light, dark
+    case system, light, dark, pink
 
     public var displayName: String {
         switch self {
         case .system: "System"
         case .light: "Light"
         case .dark: "Dark"
+        case .pink: "Pink"
         }
     }
 }
