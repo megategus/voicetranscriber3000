@@ -4,27 +4,29 @@ import TranscriptCore
 @testable import CaptureKit
 
 /// Each sample holds its own absolute index, so the fake decoder knows which part of the
-/// "recording" it was given. The ground truth is one segment every 3 s ("word 0", "word 1", …);
-/// a segment cut off by the end of the window comes back as "partial N", like a growing
-/// sentence in real Whisper output.
-private let fakeDecode: LiveTranscription.Decode = { samples in
+/// "recording" it was given. The ground truth is one word every 0.5 s ("w0", "w1", …), with
+/// a full stop after every sixth word. A word cut off by the end of the window comes back
+/// as "wN-", like a half-heard word in real Whisper output.
+private func groundTruth(_ samples: [Float], prefix: String? = nil) -> [Word] {
     guard let firstValue = samples.first else { return [] }
     let first = Double(firstValue) / sampleRate
     let last = first + Double(samples.count) / sampleRate
-    var result: [Segment] = []
-    var n = Int(first / 3)
-    while Double(n) * 3 < last {
-        let start = max(Double(n) * 3, first)
-        let end = Double(n + 1) * 3
-        if end <= last + 0.001 {
-            result.append(Segment(start: start - first, end: end - first, text: "word \(n)"))
-        } else if last - start > 0.2 {
-            result.append(Segment(start: start - first, end: last - first, text: "partial \(n)"))
-        }
+    var result: [Word] = []
+    var n = Int((first / 0.5).rounded(.up))
+    while Double(n) * 0.5 < last {
+        let start = Double(n) * 0.5
+        let end = start + 0.4
+        let text = "w\(n)" + (n % 6 == 5 ? "." : "")
+        result.append(Word(start: start - first, end: min(end, last) - first, text: end <= last ? text : "w\(n)-"))
         n += 1
+    }
+    if let prefix, let head = result.first {
+        result.insert(Word(start: max(0, head.start - 0.2), end: head.start, text: prefix), at: 0)
     }
     return result
 }
+
+private let fakeDecode: LiveTranscription.Decode = { groundTruth($0) }
 
 /// `holdOpen` keeps the stream unfinished for a while after the last chunk, like a live
 /// session that is still running.
@@ -50,10 +52,21 @@ private func finals(_ events: AsyncStream<TranscriptEvent>) async -> [Segment] {
     return result
 }
 
-@Test func liveLoopConfirmsEverySegmentOnce() async {
-    let segments = await finals(LiveTranscription.run(audio(seconds: 21), decode: fakeDecode))
-    #expect(segments.map(\.text) == (0..<7).map { "word \($0)" })
-    #expect(segments.map(\.start) == (0..<7).map { Double($0) * 3 })
+private func words(in lines: [Segment]) -> [String] {
+    lines.flatMap { $0.text.split(separator: " ").map { $0.trimmingCharacters(in: .punctuationCharacters) } }
+}
+
+private func expected(_ count: Int) -> [String] {
+    (0..<count).map { "w\($0)" }
+}
+
+@Test func liveLoopConfirmsEveryWordOnce() async {
+    let lines = await finals(LiveTranscription.run(audio(seconds: 21), decode: fakeDecode))
+    #expect(words(in: lines) == expected(42))
+    // Lines break at the full stops: six words each.
+    #expect(lines.count == 7)
+    #expect(lines.first?.text == "w0 w1 w2 w3 w4 w5.")
+    #expect(lines.first?.start == 0)
 }
 
 /// The first decode is slow, so all 90 s pile up — far more than one 30 s window.
@@ -66,14 +79,13 @@ private func finals(_ events: AsyncStream<TranscriptEvent>) async -> [Segment] {
         }
         return try await fakeDecode(samples)
     }
-    let segments = await finals(LiveTranscription.run(audio(seconds: 90), decode: slowFirst))
-    #expect(segments.map(\.text) == (0..<30).map { "word \($0)" })
-    #expect(zip(segments, segments.dropFirst()).allSatisfy { $0.start < $1.start })
+    let lines = await finals(LiveTranscription.run(audio(seconds: 90), decode: slowFirst))
+    #expect(words(in: lines) == expected(180))
+    #expect(zip(lines, lines.dropFirst()).allSatisfy { $0.start < $1.start })
 }
 
-/// Real Whisper often re-splits the same speech differently on every decode, so two decodes
-/// never agree, and may return one long segment for the whole window. Text must still come
-/// out, not be thrown away when the buffer passes the stall limit.
+/// If decodes never agree (here every decode starts with a different filler word), text
+/// must still come out once the buffer passes the stall limit, not be thrown away.
 @Test func liveLoopEmitsEverythingWhenDecodesNeverAgree() async {
     let calls = Counter()
     let restless: LiveTranscription.Decode = { samples in
@@ -81,17 +93,10 @@ private func finals(_ events: AsyncStream<TranscriptEvent>) async -> [Segment] {
         if call == 0 {
             try await Task.sleep(for: .milliseconds(200))
         }
-        guard let firstValue = samples.first else { return [] }
-        let first = Int(firstValue / Float(sampleRate))
-        let seconds = samples.count / Int(sampleRate)
-        let words = (first..<first + seconds).map { "w\($0)" }.joined(separator: " ")
-        // Never the same twice: the start wobbles by more than the 0.5 s tolerance.
-        let wobble = call.isMultiple(of: 2) ? 0.0 : 0.6
-        return [Segment(start: wobble, end: Double(seconds), text: words)]
+        return groundTruth(samples, prefix: call.isMultiple(of: 2) ? "uh" : "um")
     }
-    let segments = await finals(LiveTranscription.run(audio(seconds: 60, holdOpen: .seconds(1)), decode: restless))
-    let words = segments.flatMap { $0.text.split(separator: " ").map(String.init) }
-    #expect(words == (0..<60).map { "w\($0)" })
+    let lines = await finals(LiveTranscription.run(audio(seconds: 60, holdOpen: .seconds(1)), decode: restless))
+    #expect(words(in: lines).filter { $0 != "uh" && $0 != "um" } == expected(120))
 }
 
 private actor Counter {

@@ -4,16 +4,20 @@ import TranscriptCore
 /// The live decode loop, kept apart from WhisperKit so it can be tested with a fake decoder.
 ///
 /// About every second of new audio it decodes the unconfirmed part of the buffer (at most
-/// 30 s, taken from the front so audio is never skipped), confirms segments that two
-/// decodes agree on, and trims the buffer past them.
+/// 30 s, taken from the front so audio is never skipped), confirms the words two decodes
+/// agree on, groups confirmed words into lines, and trims the buffer past them.
 enum LiveTranscription {
-    /// Decodes 16 kHz samples; segment times are relative to the first sample.
-    typealias Decode = @Sendable ([Float]) async throws -> [Segment]
+    /// Decodes 16 kHz samples into words; times are relative to the first sample.
+    typealias Decode = @Sendable ([Float]) async throws -> [Word]
 
     static let decodeInterval = Int(sampleRate)            // 1 s
     static let maxWindow = Int(30 * sampleRate)            // 30 s
     static let stallLimit = Int(25 * sampleRate)           // 25 s
     static let silenceKeep = Int(0.5 * sampleRate)         // context kept when skipping silence
+    /// Audio kept before the last confirmed word, so a word whose timestamp is a little
+    /// early is not cut off; words decoded again from it are dropped by `WordConfirmer`.
+    static let contextKeep: TimeInterval = 0.5
+    static let levelFrame = Int(sampleRate / 10)           // 0.1 s energy frames
 
     static func run(
         _ audio: AsyncStream<AudioChunk>,
@@ -44,25 +48,24 @@ enum LiveTranscription {
         output: AsyncStream<TranscriptEvent>.Continuation
     ) async {
         var buffer: [Float] = []
-        var bufferStart: Int64 = 0      // session sample index of buffer[0]
-        var origin: Int64?              // startSample of the first chunk; times are relative to it
-        var confirmer = SegmentConfirmer()
+        var bufferStart: Int64 = 0      // sample index of buffer[0], counted from the first chunk
+        var confirmer = WordConfirmer()
+        var lines = LineBuilder()
+        var levels = EnergyHistory(frame: levelFrame)
         let filter = HallucinationFilter()
         var partial = ""
         var ended = false
 
         func emit(_ segments: [Segment]) {
-            for segment in segments where !segment.text.trimmingCharacters(in: .whitespaces).isEmpty {
-                let from = clamp(Int(segment.start * sampleRate) - Int(bufferStart), buffer.count)
-                let to = clamp(Int(segment.end * sampleRate) - Int(bufferStart), buffer.count)
-                let energy = AudioLevel.rms(Array(buffer[from..<max(from, to)]))
-                if !filter.shouldDrop(segment, rmsEnergy: energy) {
-                    output.yield(.final(segment))
-                }
+            for line in segments where !filter.shouldDrop(line, rmsEnergy: levels.rms(from: line.start, to: line.end)) {
+                output.yield(.final(line))
             }
         }
 
-        func setPartial(_ text: String) {
+        func updatePartial() {
+            let text = ([lines.openText] + confirmer.pending.map { $0.text.trimmingCharacters(in: .whitespaces) })
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
             if text != partial {
                 partial = text
                 output.yield(.partial(text))
@@ -78,11 +81,8 @@ enum LiveTranscription {
         while !Task.isCancelled {
             if !ended {
                 let taken = await inbox.take(atLeast: decodeInterval)
-                if origin == nil, let first = taken.firstSample {
-                    origin = first
-                    bufferStart = 0
-                }
                 buffer += taken.samples
+                levels.append(taken.samples)
                 ended = taken.ended
             }
             if buffer.isEmpty {
@@ -90,9 +90,12 @@ enum LiveTranscription {
                 continue
             }
 
-            // Skip silence while nothing is pending, keeping a little context for the next word.
-            if !ended, partial.isEmpty,
+            // Skip silence while nothing is pending, keeping a little context for the next
+            // word. A pause also ends the open line.
+            if !ended, confirmer.pending.isEmpty,
                AudioLevel.rms(Array(buffer.suffix(decodeInterval))) < HallucinationFilter.speechThreshold {
+                emit(lines.finish().map { [$0] } ?? [])
+                updatePartial()
                 let drop = max(0, buffer.count - silenceKeep)
                 buffer.removeFirst(drop)
                 bufferStart += Int64(drop)
@@ -103,21 +106,21 @@ enum LiveTranscription {
             let capped = buffer.count > windowCount
             let offset = Double(bufferStart) / sampleRate
             var decoded = ((try? await decode(Array(buffer.prefix(windowCount)))) ?? [])
-                .map { Segment(start: $0.start + offset, end: $0.end + offset, text: $0.text) }
+                .map { Word(start: $0.start + offset, end: $0.end + offset, text: $0.text) }
                 .filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
-            // The last segment of a capped window may be cut off mid-word; it is decoded
-            // again from the next window instead.
+            // The last word of a capped window may be cut off; it is decoded again from
+            // the next window instead.
             if capped, decoded.count > 1 {
                 decoded.removeLast()
             }
 
             let before = confirmer.confirmedEnd
-            var (confirmed, _) = confirmer.ingest(decoded)
+            var confirmed = confirmer.ingest(decoded)
             let unconfirmed = buffer.count - clamp(Int((confirmer.confirmedEnd * sampleRate).rounded()) - Int(bufferStart), buffer.count)
             let stalled = unconfirmed > stallLimit
             if stalled {
-                // Decodes keep disagreeing (Whisper re-splits the same speech differently),
-                // so take this decode as it is rather than let the buffer outgrow the window.
+                // Decodes keep disagreeing; take this one as it is rather than let the
+                // buffer outgrow the window.
                 confirmed += confirmer.confirmAllButLast()
                 if confirmed.isEmpty {
                     confirmed = confirmer.flush()
@@ -129,30 +132,59 @@ enum LiveTranscription {
                 // Input is over and decoding has settled: everything decoded is final.
                 confirmed += confirmer.flush()
             }
-            emit(confirmed)
+            emit(lines.add(confirmed))
 
             if confirmed.isEmpty, ended || stalled {
                 // Whisper found no new speech in this window (music, noise): move past it
                 // so the buffer can't grow without bound and the loop always finishes.
                 // Keep the last second while live in case a word is just starting.
-                let keep = ended ? 0 : 1.0
-                trim(to: offset + Double(windowCount) / sampleRate - keep)
+                trim(to: offset + Double(windowCount) / sampleRate - (ended ? 0 : 1))
             } else {
-                trim(to: confirmer.confirmedEnd)
+                trim(to: confirmer.confirmedEnd - contextKeep)
             }
-
-            let pending = decoded.filter { $0.start >= confirmer.confirmedEnd - 0.1 }
-            setPartial(ended && !progressed ? "" : pending.map { $0.text.trimmingCharacters(in: .whitespaces) }.joined(separator: " "))
+            updatePartial()
 
             if ended, !progressed, !capped {
                 break
             }
         }
-        setPartial("")
+        emit(lines.finish().map { [$0] } ?? [])
+        if !partial.isEmpty {
+            output.yield(.partial(""))
+        }
     }
 
     private static func clamp(_ value: Int, _ upper: Int) -> Int {
         min(max(value, 0), upper)
+    }
+}
+
+/// RMS energy per short frame for the whole session, so the hallucination filter can
+/// measure a line's loudness after its audio has been trimmed from the buffer.
+private struct EnergyHistory {
+    let frame: Int
+    private var frames: [Float] = []
+    private var tail: [Float] = []
+
+    init(frame: Int) {
+        self.frame = frame
+    }
+
+    mutating func append(_ samples: [Float]) {
+        tail += samples
+        while tail.count >= frame {
+            frames.append(AudioLevel.rms(Array(tail.prefix(frame))))
+            tail.removeFirst(frame)
+        }
+    }
+
+    func rms(from start: TimeInterval, to end: TimeInterval) -> Float {
+        let perSecond = sampleRate / Double(frame)
+        let lower = max(0, min(frames.count, Int(start * perSecond)))
+        let upper = max(lower, min(frames.count, Int((end * perSecond).rounded(.up))))
+        guard upper > lower else { return 0 }
+        let meanSquare = frames[lower..<upper].reduce(Float(0)) { $0 + $1 * $1 } / Float(upper - lower)
+        return meanSquare.squareRoot()
     }
 }
 

@@ -56,7 +56,8 @@ Kit/
     Models.swift                             AudioChunk, Segment, TranscriptEvent, AudioSourceKind
     TimestampFormat.swift
     TranscriptStore.swift                    actor; segments, partial, 5-min blocks
-    SegmentConfirmer.swift                   two-pass agreement rule
+    WordConfirmer.swift                      word-level two-decode agreement (replaced SegmentConfirmer)
+    LineBuilder.swift                        groups confirmed words into lines
     HallucinationFilter.swift
     SessionWriter.swift                      folder, files, rename
     SessionRecovery.swift                    find unfinished sessions
@@ -129,6 +130,8 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
 - [ ] **Step 5:** Commit `feat(core): timestamps and transcript store`.
 
 ### Task 3: Segment confirmation and hallucination filter
+
+> **Revised during Task 7:** `SegmentConfirmer` was replaced by `WordConfirmer` (word-level agreement) and `LineBuilder`, because whole-segment agreement stalled 15–25 s on real Whisper output. See spec section 4 and the Task 7 revision note. Tests: `WordConfirmerTests`, `LineBuilderTests`.
 
 **Files:**
 - Create: `Kit/Sources/TranscriptCore/SegmentConfirmer.swift`, `Kit/Sources/TranscriptCore/HallucinationFilter.swift`
@@ -246,6 +249,12 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
 - [ ] **Step 5:** App: create the transcriber at launch and call `load`; Start is disabled with a progress label "Loading speech model… NN%" until loaded. `TranscriptView` lists final lines as `[mm:ss] text` and shows the partial line in secondary color, auto-scrolling to the bottom unless the user has scrolled up.
 - [ ] **Step 6:** Manual check: play a lecture on YouTube, Start (Computer audio), watch lines appear within about 4 s.
 - [ ] **Step 7:** Commit `feat(capture): live WhisperKit transcription`.
+
+**Revision (after the first manual check):** a 34 s session kept only its last two lines. Fixes, each with a failing test first:
+- Live decoding turns off `firstTokenLogProbThreshold` (it rejected windows starting mid-sentence and returned nothing).
+- On a stall the loop emits the current decode instead of trimming it away (`liveLoopEmitsEverythingWhenDecodesNeverAgree`).
+- Word-level agreement: `Decode` returns `[Word]` (WhisperKit `wordTimestamps: true` for live only); `WordConfirmer` + `LineBuilder` replace `SegmentConfirmer`; the hallucination filter measures a line's energy from a per-0.1 s energy history. Live-loop tests use a fake decoder that returns one word every 0.5 s. Measured lag on an M3: 4–6 s for final lines (was 15–26 s).
+- Tried Argmax's `large-v3-v20240930_turbo`: same speed and accuracy on the M3, not adopted.
 
 ### Task 8: SessionController and finalizing
 

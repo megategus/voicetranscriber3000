@@ -82,11 +82,13 @@ public final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         )
     }
 
-    /// Live windows usually start mid-sentence, where the first token is unlikely by nature.
-    /// WhisperKit's first-token check then rejects good text, retries up to temperature 1.0
-    /// (slow) and returns nothing, so it is off for live decoding.
+    /// Live decoding needs word timestamps for word-level agreement. Live windows also
+    /// usually start mid-sentence, where the first token is unlikely by nature; WhisperKit's
+    /// first-token check then rejects good text, retries up to temperature 1.0 (slow) and
+    /// returns nothing, so that check is off.
     private static var liveDecodingOptions: DecodingOptions {
         var options = decodingOptions
+        options.wordTimestamps = true
         options.firstTokenLogProbThreshold = nil
         return options
     }
@@ -96,10 +98,15 @@ public final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         return whisper
     }
 
-    private func decode(_ samples: [Float]) async throws -> [Segment] {
+    private func decode(_ samples: [Float]) async throws -> [Word] {
         let whisper = try loaded()
         let results = try await whisper.transcribe(audioArray: samples, decodeOptions: Self.liveDecodingOptions)
-        return Self.segments(from: results)
+        return results
+            .flatMap(\.segments)
+            .flatMap { $0.words ?? [] }
+            .map { Word(start: Double($0.start), end: Double($0.end), text: $0.word) }
+            .filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+            .sorted { $0.start < $1.start }
     }
 
     private static func segments(from results: [TranscriptionResult]) -> [Segment] {

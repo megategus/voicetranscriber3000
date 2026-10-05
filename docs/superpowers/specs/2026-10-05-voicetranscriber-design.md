@@ -106,14 +106,30 @@ enum AudioSourceKind { case computerAudio, microphone }
 
 - Audio chunks append to a rolling buffer. About every 1 s, the
   transcriber decodes the unconfirmed region of the buffer, oldest audio first (capped at 30 s), so falling behind delays text but never skips audio.
-- **Stalled confirmation:** if unconfirmed audio exceeds 25 s, every segment
-  of the latest decode except the last is confirmed as is, so the 30 s cap
-  never drops audio from the live transcript.
-- **Confirmation rule:** a segment becomes final when two consecutive
-  decodes agree on it. Final segments are emitted as `.final`, never
-  revised, and the buffer is trimmed past them. The remaining text is
-  emitted as `.partial` and shown in gray.
+- **Confirmation rule (local agreement):** decodes return words with
+  timestamps. A word becomes final when two consecutive decodes agree on
+  it, in order from the start of the unconfirmed audio (compared ignoring
+  case and punctuation). Whisper re-splits a growing window into different
+  segments almost every time, so agreeing on whole segments stalled for
+  15–25 s; words settle within about two decodes. Words Whisper repeats
+  right after the trim point are dropped. Final words are never revised.
+- **Lines:** final words are grouped into transcript lines, emitted as
+  `.final`. A line ends after `.`, `?` or `!` (not after "Mr." etc.),
+  before a pause of 1.5 s or more, before it would pass 15 s, and when the
+  silence gate skips audio. Confirmed words not yet in a line, plus the
+  unconfirmed words, are emitted as `.partial` and shown in gray.
+- **Stalled confirmation:** if unconfirmed audio exceeds 25 s, every word
+  of the latest decode except the last is confirmed as is (all of it if it
+  has one word), so the 30 s cap never drops audio from the live
+  transcript. A window is skipped only when Whisper finds no speech in it.
+- The buffer is trimmed to 0.5 s before the last confirmed word.
+- Live decoding turns off WhisperKit's first-token log-probability check:
+  live windows start mid-sentence, and the check made Whisper retry up to
+  temperature 1.0 and return nothing.
 - Target latency: partial text about 1 s, final text about 2–4 s.
+  Measured on an M3 with large-v3-turbo: a decode takes about 2.5 s, the
+  partial line updates every 3–4 s, and final lines arrive 4–6 s after
+  speech.
 - **Timestamps** come from the sample offset (`startSample / 16000`), not
   from the system clock, so they match `audio.m4a` exactly.
 - **Silence:** voice-activity detection gates decoding, so silent windows
@@ -222,7 +238,7 @@ Transcript line format: `[mm:ss] text` (`[h:mm:ss]` past one hour).
 ## 9. Testing
 
 - **Unit (Swift Testing):**
-  - Confirmation rule, using a fake `Transcriber` that returns scripted decodes.
+  - Word confirmation and line building; the live loop with a fake decoder that returns scripted words.
   - `TranscriptStore` ordering and 5-minute block stability.
   - Request building: cache breakpoint placement, schema, headers.
   - SSE parser against recorded API stream fixtures (text, thinking,
