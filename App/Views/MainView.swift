@@ -50,6 +50,11 @@ struct MainView: View {
 
             Spacer()
 
+            SettingsLink {
+                Image(systemName: "gearshape")
+            }
+            .help("Settings")
+
             if session.isLagging {
                 Label("Transcription lagging", systemImage: "tortoise")
                     .font(.callout)

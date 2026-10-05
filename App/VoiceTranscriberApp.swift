@@ -6,13 +6,15 @@ import SwiftUI
 struct VoiceTranscriberApp: App {
     @State private var speechModel: SpeechModel
     @State private var session: SessionController
+    @State private var settings: AppSettings
 
     init() {
         let speechModel = SpeechModel()
+        let settings = AppSettings()
         _speechModel = State(initialValue: speechModel)
+        _settings = State(initialValue: settings)
         _session = State(initialValue: SessionController(
-            root: FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Documents/Transcripts", isDirectory: true),
+            root: settings.outputFolder,
             transcriber: speechModel.transcriber,
             makeSource: { kind in
                 switch kind {
@@ -21,7 +23,7 @@ struct VoiceTranscriberApp: App {
                 }
             },
             notes: nil,               // Claude notes arrive in Task 12
-            retranscribe: { true }    // Settings toggle arrives in Task 9
+            retranscribe: { settings.retranscribeAfterStop }
         ))
     }
 
@@ -30,6 +32,12 @@ struct VoiceTranscriberApp: App {
             MainView(speechModel: speechModel, session: session)
                 .frame(minWidth: 560, minHeight: 420)
                 .task { await speechModel.load() }
+                .onChange(of: settings.outputFolder, initial: true) { _, folder in
+                    session.root = folder
+                }
+        }
+        Settings {
+            SettingsView(settings: settings)
         }
     }
 }

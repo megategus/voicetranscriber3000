@@ -305,6 +305,8 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
 - [ ] **Step 4:** Manual check: save a key, quit, relaunch → status "Saved"; toggle off re-transcription → Stop goes straight to notes.
 - [ ] **Step 5:** Commit `feat(app): settings and keychain`.
 
+**As built:** `KeychainStore` and `AppSettings` live in `Kit/Sources/SessionKit/` (macOS-only, so they can be unit-tested) instead of `App/`. `KeychainStore` is a struct with `service`/`account` and `static let apiKey`; tests use a throwaway service name, never the real entry or a real key. `AppSettings(defaults:)` takes a `UserDefaults` so tests use a throwaway suite. The main window has a gear `SettingsLink`.
+
 ### Task 10: Claude client and streaming parser
 
 **Files:**
