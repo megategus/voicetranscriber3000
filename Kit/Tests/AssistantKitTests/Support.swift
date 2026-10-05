@@ -1,4 +1,5 @@
 import Foundation
+import Testing
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -67,3 +68,8 @@ func simpleRequest(effort: String = "low", maxTokens: Int = 4000) -> MessagesReq
         effort: effort
     )
 }
+
+/// Suites that use `StubProtocol` share its static state, so they are nested here and run
+/// one at a time.
+@Suite(.serialized)
+struct StubbedNetworkTests {}

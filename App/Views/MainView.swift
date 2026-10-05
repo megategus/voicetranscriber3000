@@ -13,8 +13,13 @@ struct MainView: View {
             controls
             modelStatus
             banners
-            TranscriptView(segments: session.segments, partial: session.partial)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+            HSplitView {
+                TranscriptView(segments: session.segments, partial: session.partial)
+                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    .frame(minWidth: 380)
+                AskPanel(session: session)
+                    .frame(minWidth: 320, idealWidth: 380)
+            }
             footer
         }
         .padding()

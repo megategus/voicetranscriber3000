@@ -35,6 +35,11 @@ public struct ClaudeClient: Sendable {
         self.retryDelays = retryDelays
     }
 
+    /// Whether an API key is configured (checked without making a request).
+    public var hasKey: Bool {
+        !(apiKey()?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     /// Yields text deltas as they arrive; throws a `ClaudeError` on failure.
     public func stream(_ request: MessagesRequest) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in

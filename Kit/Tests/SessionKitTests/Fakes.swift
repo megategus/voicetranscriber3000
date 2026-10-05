@@ -137,3 +137,50 @@ func waitUntil(timeout: Duration = .seconds(5), _ condition: () -> Bool) async -
     }
     return true
 }
+
+/// Scripted HTTP replies for the Claude client, shared by the ask tests (run serialized).
+final class HTTPStub: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var replies: [(Int, String)] = []
+    nonisolated(unsafe) private static var count = 0
+
+    static func reset(_ replies: [(Int, String)]) {
+        lock.withLock {
+            self.replies = replies
+            count = 0
+        }
+    }
+
+    static var requestCount: Int { lock.withLock { count } }
+
+    static var session: URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [HTTPStub.self]
+        return URLSession(configuration: config)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let (status, body) = Self.lock.withLock {
+            Self.count += 1
+            return Self.replies.isEmpty ? (500, "{}") : Self.replies.removeFirst()
+        }
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+
+    static func sse(_ text: String, stop: String = "end_turn") -> String {
+        """
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\(text)"}}
+
+        data: {"type":"message_delta","delta":{"stop_reason":"\(stop)"}}
+
+        """
+    }
+}

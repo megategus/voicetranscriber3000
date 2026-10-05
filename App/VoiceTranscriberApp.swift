@@ -1,3 +1,4 @@
+import AssistantKit
 import CaptureKit
 import SessionKit
 import SwiftUI
@@ -23,14 +24,16 @@ struct VoiceTranscriberApp: App {
                 }
             },
             notes: nil,               // Claude notes arrive in Task 12
-            retranscribe: { settings.retranscribeAfterStop }
+            retranscribe: { settings.retranscribeAfterStop },
+            // The key is read from the Keychain for each request, never stored elsewhere.
+            claude: ClaudeClient(apiKey: { KeychainStore.apiKey.load() })
         ))
     }
 
     var body: some Scene {
         WindowGroup("VoiceTranscriber") {
             MainView(speechModel: speechModel, session: session)
-                .frame(minWidth: 560, minHeight: 420)
+                .frame(minWidth: 820, minHeight: 480)
                 .task { await speechModel.load() }
                 .onChange(of: settings.outputFolder, initial: true) { _, folder in
                     session.root = folder

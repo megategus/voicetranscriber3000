@@ -1,3 +1,4 @@
+import AssistantKit
 import CaptureKit
 import Foundation
 import Observation
@@ -18,6 +19,15 @@ public struct DoneInfo: Equatable, Sendable {
     public let folder: URL
     public let notesWritten: Bool
     public let message: String?
+}
+
+/// Why the last question got no answer, for the Ask panel.
+public enum AskProblem: Equatable, Sendable {
+    case nothingYet
+    case missingKey
+    case unauthorized
+    case refused
+    case failed(String)
 }
 
 public enum SessionState: Equatable, Sendable {
@@ -53,6 +63,13 @@ public final class SessionController {
     public var root: URL
     public var notes: (any NotesMaking)?
 
+    /// Questions during recording; nil when no Claude client was given.
+    public let assistant: Assistant?
+    public private(set) var askQuestion = ""
+    public private(set) var askAnswer = ""
+    public private(set) var askProblem: AskProblem?
+    public private(set) var isAsking = false
+
     private let transcriber: any Transcriber
     private let makeSource: (AudioSourceKind) -> any AudioSource
     private let retranscribe: () -> Bool
@@ -70,6 +87,11 @@ public final class SessionController {
     private var silenceStart: TimeInterval = 0
     private var lastLoudWall = Date()
 
+    // Asking
+    private var lastQuestionTime: TimeInterval?
+    private var lastAsked: String?
+    private var askGeneration = 0
+
     // Finalizing
     private var fileResume: CheckedContinuation<[Segment]?, Never>?
     private var fileTask: Task<Void, Never>?
@@ -82,9 +104,11 @@ public final class SessionController {
         makeSource: @escaping (AudioSourceKind) -> any AudioSource,
         notes: (any NotesMaking)?,
         retranscribe: @escaping () -> Bool,
-        clock: @escaping () -> Date = Date.init
+        clock: @escaping () -> Date = Date.init,
+        claude: ClaudeClient? = nil
     ) {
         self.root = root
+        assistant = claude.map { [store] in Assistant(client: $0, store: store) }
         self.transcriber = transcriber
         self.makeSource = makeSource
         self.notes = notes
@@ -103,6 +127,74 @@ public final class SessionController {
     public var canGenerateNotes: Bool {
         guard case .done(let info) = state, !info.notesWritten else { return false }
         return finished.map { !$0.transcript.isEmpty } ?? false
+    }
+
+    public var canAsk: Bool { state == .recording && assistant != nil }
+
+    // MARK: - Asking
+
+    /// Asks about the transcript so far. The answer streams into `askAnswer`; a finished
+    /// answer is appended to `qa.md`. A new question replaces one still streaming.
+    public func ask(_ question: String) async {
+        let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canAsk, let assistant, !question.isEmpty else { return }
+        askGeneration += 1
+        let generation = askGeneration
+        let now = elapsed
+        let writer = writer
+        askQuestion = question
+        askAnswer = ""
+        askProblem = nil
+        isAsking = true
+        lastAsked = question
+        lastQuestionTime = now
+        defer {
+            if generation == askGeneration { isAsking = false }
+        }
+        do {
+            let stream = try await assistant.ask(question, now: now)
+            for try await delta in stream {
+                guard generation == askGeneration else { return }
+                askAnswer += delta
+            }
+            guard generation == askGeneration else { return }
+            try? writer?.appendQA(question: question, answer: askAnswer, at: now)
+        } catch {
+            guard generation == askGeneration else { return }
+            if error as? ClaudeError == .refusal {
+                askAnswer = ""   // a declined answer's partial text is not kept
+            }
+            askProblem = Self.problem(for: error)
+        }
+    }
+
+    public func ask(_ action: QuickAction) async {
+        guard let assistant else { return }
+        var action = action
+        if case .whatDidIMiss(nil) = action {
+            action = .whatDidIMiss(since: lastQuestionTime)
+        }
+        await ask(assistant.question(for: action, now: elapsed))
+    }
+
+    public func retryAsk() async {
+        guard let lastAsked else { return }
+        await ask(lastAsked)
+    }
+
+    private static func problem(for error: Error) -> AskProblem {
+        switch error {
+        case AskError.nothingYet: return .nothingYet
+        case AskError.missingKey, ClaudeError.missingKey: return .missingKey
+        case ClaudeError.unauthorized: return .unauthorized
+        case ClaudeError.refusal: return .refused
+        case ClaudeError.rateLimited: return .failed("Claude is busy right now. Try again in a moment.")
+        case ClaudeError.server(let code): return .failed("Claude had a server problem (\(code)). Try again.")
+        case ClaudeError.network(let message): return .failed("Network problem: \(message)")
+        case ClaudeError.truncated: return .failed("The answer was cut off. Try again.")
+        case ClaudeError.api(let message): return .failed(message)
+        default: return .failed(error.localizedDescription)
+        }
     }
 
     // MARK: - Recording
@@ -340,6 +432,13 @@ public final class SessionController {
     }
 
     private func resetLiveState() {
+        askGeneration += 1
+        askQuestion = ""
+        askAnswer = ""
+        askProblem = nil
+        isAsking = false
+        lastQuestionTime = nil
+        lastAsked = nil
         segments = []
         partial = ""
         isLagging = false
