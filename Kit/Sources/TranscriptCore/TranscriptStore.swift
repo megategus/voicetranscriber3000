@@ -3,7 +3,7 @@ import Foundation
 /// Finalized segments in time order plus the current partial line.
 /// The single source of truth for the UI, the session writer, and the assistant.
 public actor TranscriptStore {
-    public let blockDuration: TimeInterval
+    public nonisolated let blockDuration: TimeInterval
     public private(set) var segments: [Segment] = []
     public private(set) var partial: String = ""
 

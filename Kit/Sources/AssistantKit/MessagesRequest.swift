@@ -49,14 +49,21 @@ public enum JSONValue: Codable, Sendable, Equatable {
     }
 }
 
-/// A text content block; `cached` adds an ephemeral cache breakpoint after it.
+public enum CacheTTL: String, Sendable {
+    case fiveMinutes = "5m"
+    case oneHour = "1h"
+}
+
+/// A text content block; `cached` adds a cache breakpoint after it.
 public struct TextBlock: Encodable, Sendable, Equatable {
     public var text: String
     public var cached: Bool
+    public var ttl: CacheTTL
 
-    public init(text: String, cached: Bool) {
+    public init(text: String, cached: Bool, ttl: CacheTTL = .fiveMinutes) {
         self.text = text
         self.cached = cached
+        self.ttl = ttl
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -68,7 +75,9 @@ public struct TextBlock: Encodable, Sendable, Equatable {
         try container.encode("text", forKey: .type)
         try container.encode(text, forKey: .text)
         if cached {
-            try container.encode(["type": "ephemeral"], forKey: .cacheControl)
+            var control = ["type": "ephemeral"]
+            if ttl == .oneHour { control["ttl"] = "1h" }
+            try container.encode(control, forKey: .cacheControl)
         }
     }
 }
@@ -95,7 +104,15 @@ public struct MessagesRequest: Encodable, Sendable, Equatable {
     /// When set, the response is JSON matching this schema.
     public var jsonSchema: JSONValue?
 
-    public init(maxTokens: Int, system: [TextBlock], messages: [Message], effort: String, jsonSchema: JSONValue? = nil) {
+    public init(
+        model: String = "claude-opus-5-5",
+        maxTokens: Int,
+        system: [TextBlock],
+        messages: [Message],
+        effort: String,
+        jsonSchema: JSONValue? = nil
+    ) {
+        self.model = model
         self.maxTokens = maxTokens
         self.system = system
         self.messages = messages

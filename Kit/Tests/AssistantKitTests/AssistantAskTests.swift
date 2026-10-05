@@ -34,7 +34,7 @@ extension StubbedNetworkTests {
             #expect(content[3].text.contains("What is a derivative?"))
             #expect(content.map(\.cached) == [false, true, false, false])
             #expect(content[0].text.hasPrefix("<transcript_part>") && content[0].text.hasSuffix("</transcript_part>"))
-            #expect(request.system == [TextBlock(text: Prompts.askSystem, cached: true)])
+            #expect(request.system == [TextBlock(text: Prompts.askSystem, cached: true, ttl: .oneHour)])
             #expect(request.effort == "low")
             #expect(request.maxTokens == 4000)
             #expect(request.jsonSchema == nil)
@@ -52,9 +52,44 @@ extension StubbedNetworkTests {
         @Test func askRequestWithNoCompletedBlocks() async throws {
             let assistant = Assistant(client: keyedClient, store: await store([10, 200]))
             let request = await assistant.buildAskRequest(question: "Q", now: 250)
-            #expect(transcriptBlocks(request).count == 1)
-            #expect(request.messages[0].content.allSatisfy { !$0.cached })
+            // No 5-minute block is complete; the current part is split by minute and the
+            // finished minute (0) gets the breakpoint.
+            let blocks = transcriptBlocks(request)
+            #expect(blocks.count == 2)
+            #expect(blocks.map(\.cached) == [true, false])
+            #expect(blocks[0].text.contains("at 10") && blocks[1].text.contains("at 200"))
             #expect(request.system.first?.cached == true)
+        }
+
+        @Test func currentPartIsSplitByMinute() async throws {
+            let assistant = Assistant(client: keyedClient, store: await store([10, 290, 310, 330, 400, 650]))
+            let blocks = transcriptBlocks(await assistant.buildAskRequest(question: "Q", now: 700))
+            // [block0] [block1] then the current part (block 2: 600–899 s) has only 650.
+            #expect(blocks.count == 3)
+            #expect(blocks.map(\.cached) == [false, true, false])
+
+            let early = Assistant(client: keyedClient, store: await store([310, 330, 400, 470]))
+            let parts = transcriptBlocks(await early.buildAskRequest(question: "Q", now: 480))
+            // Minutes 5, 6 complete (a later line exists); minute 7 is still growing.
+            #expect(parts.map { $0.text.contains("at 470") } == [false, false, true])
+            #expect(parts.map(\.cached) == [false, true, false])
+        }
+
+        @Test func askBreakpointsUseOneHourCacheAndStayWithinLimit() async throws {
+            let assistant = Assistant(client: keyedClient, store: await store([10, 290, 310, 330, 400, 650, 700, 760]))
+            let request = await assistant.buildAskRequest(question: "Q", now: 800)
+            let marked = (request.system + request.messages[0].content).filter(\.cached)
+            #expect(marked.count <= 4)
+            #expect(marked.allSatisfy { $0.ttl == .oneHour })
+        }
+
+        @Test func configurationChoosesModelAndNotesEffort() async throws {
+            let assistant = Assistant(client: keyedClient, store: await store([10]))
+            assistant.configuration = .init(model: .sonnet55, notesEffort: "medium")
+            #expect(await assistant.buildAskRequest(question: "Q", now: 20).model == "claude-sonnet-5-5")
+            let notes = assistant.buildNotesRequest(transcript: [Segment(start: 1, end: 2, text: "x")])
+            #expect(notes.model == "claude-sonnet-5-5")
+            #expect(notes.effort == "medium")
         }
 
         @Test func askRequestNeverSendsEmptyText() async throws {

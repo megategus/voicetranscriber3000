@@ -10,6 +10,7 @@ public final class SessionWriter: @unchecked Sendable {
         public static let finalTranscript = "transcript.md"
         public static let notes = "notes.md"
         public static let qa = "qa.md"
+        public static let usage = "usage.md"
     }
 
     private let lock = NSLock()
@@ -71,6 +72,12 @@ public final class SessionWriter: @unchecked Sendable {
     public func writeNotes(_ markdown: String) throws {
         try lock.withLock {
             try Data(markdown.utf8).write(to: _folder.appendingPathComponent(FileName.notes), options: .atomic)
+        }
+    }
+
+    public func writeUsage(_ markdown: String) throws {
+        try lock.withLock {
+            try Data(markdown.utf8).write(to: _folder.appendingPathComponent(FileName.usage), options: .atomic)
         }
     }
 

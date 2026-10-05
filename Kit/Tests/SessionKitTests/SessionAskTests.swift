@@ -36,6 +36,8 @@ extension StubbedNetworkTests {
             #expect(controller.askAnswer == "It is about derivatives [00:01].")
             #expect(controller.askProblem == nil)
             #expect(!controller.isAsking)
+            #expect(await waitUntil { controller.cost.questionCount == 1 })
+            #expect(abs(controller.cost.questions - 0.0014) < 1e-9)
             await controller.stop()
             let folder = try #require({ if case .done(let info) = controller.state { return info.folder }; return nil }())
             let qa = try String(contentsOf: folder.appendingPathComponent("qa.md"), encoding: .utf8)

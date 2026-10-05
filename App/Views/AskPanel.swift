@@ -26,6 +26,12 @@ struct AskPanel: View {
             .controlSize(.small)
 
             answer
+
+            if session.cost.questionCount > 0 {
+                Text("\(session.cost.questionCount) questions this session: \(SessionCost.dollars(session.cost.questions))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

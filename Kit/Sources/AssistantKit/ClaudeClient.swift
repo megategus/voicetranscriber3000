@@ -41,11 +41,16 @@ public struct ClaudeClient: Sendable {
     }
 
     /// Yields text deltas as they arrive; throws a `ClaudeError` on failure.
-    public func stream(_ request: MessagesRequest) -> AsyncThrowingStream<String, Error> {
+    /// `onUsage` is called once the response has finished (also on a refusal or a cut-off,
+    /// which are billed too).
+    public func stream(
+        _ request: MessagesRequest,
+        onUsage: (@Sendable (UsageReport) -> Void)? = nil
+    ) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    try await run(request) { continuation.yield($0) }
+                    try await run(request, onUsage: onUsage) { continuation.yield($0) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -56,9 +61,12 @@ public struct ClaudeClient: Sendable {
     }
 
     /// The whole response text.
-    public func complete(_ request: MessagesRequest) async throws -> String {
+    public func complete(
+        _ request: MessagesRequest,
+        onUsage: (@Sendable (UsageReport) -> Void)? = nil
+    ) async throws -> String {
         var text = ""
-        for try await delta in stream(request) {
+        for try await delta in stream(request, onUsage: onUsage) {
             text += delta
         }
         return text
@@ -66,7 +74,11 @@ public struct ClaudeClient: Sendable {
 
     // MARK: - Private
 
-    private func run(_ request: MessagesRequest, onText: (String) -> Void) async throws {
+    private func run(
+        _ request: MessagesRequest,
+        onUsage: (@Sendable (UsageReport) -> Void)?,
+        onText: (String) -> Void
+    ) async throws {
         guard let key = apiKey()?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
             throw ClaudeError.missingKey
         }
@@ -74,7 +86,7 @@ public struct ClaudeClient: Sendable {
         var attempt = 0
         while true {
             do {
-                try await attemptOnce(urlRequest, onText: onText)
+                try await attemptOnce(urlRequest, model: request.model, onUsage: onUsage, onText: onText)
                 return
             } catch let failure as Failure {
                 guard failure.retryable, attempt < retryDelays.count, !Task.isCancelled else { throw failure.error }
@@ -90,7 +102,12 @@ public struct ClaudeClient: Sendable {
         let retryable: Bool
     }
 
-    private func attemptOnce(_ urlRequest: URLRequest, onText: (String) -> Void) async throws {
+    private func attemptOnce(
+        _ urlRequest: URLRequest,
+        model requestedModel: String,
+        onUsage: (@Sendable (UsageReport) -> Void)?,
+        onText: (String) -> Void
+    ) async throws {
         let response: HTTPURLResponse
         let lines: AsyncThrowingStream<String, Error>
         do {
@@ -107,6 +124,14 @@ public struct ClaudeClient: Sendable {
 
         var parser = SSEParser()
         var stopped = false
+        func reportUsage() {
+            let model = parser.model ?? requestedModel
+            let pricing = Pricing.forModel(model) ?? Pricing.forModel(requestedModel) ?? ClaudeModel.opus55.pricing
+            onUsage?(UsageReport(model: model, tokens: parser.usage, cost: pricing.cost(of: parser.usage)))
+        }
+        defer {
+            if stopped || parser.usage != TokenUsage() { reportUsage() }
+        }
         do {
             for try await line in lines {
                 switch parser.feed(line: line) {

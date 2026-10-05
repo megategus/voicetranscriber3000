@@ -170,7 +170,7 @@ private func doneInfo(_ state: SessionState) -> DoneInfo? {
                                     source: FakeSource(seconds: 15, amplitude: 0.5))
     await controller.start(.microphone)
     #expect(await waitUntil { controller.isLagging })
-    #expect(controller.elapsed >= 15)
+    #expect(await waitUntil { controller.elapsed >= 15 })
     await controller.stop()
 }
 

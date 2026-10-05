@@ -210,6 +210,11 @@ struct MainView: View {
                 Text(message)
                     .foregroundStyle(.secondary)
             }
+            if !session.cost.isEmpty {
+                Text("Claude cost: \(SessionCost.dollars(session.cost.total)) (notes \(SessionCost.dollars(session.cost.notes)) · \(session.cost.questionCount) questions \(SessionCost.dollars(session.cost.questions)))")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             HStack {
                 Button("Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([info.folder])

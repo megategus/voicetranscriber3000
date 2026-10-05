@@ -13,17 +13,47 @@ public enum AskError: Error, Equatable {
     case missingKey
 }
 
-/// Questions about the transcript during a session. Each question is independent (no chat
-/// history); the transcript is sent as 5-minute blocks so completed ones are cached.
+/// Which model to use and how hard to think when writing notes. Changed from Settings.
+public struct AssistantConfiguration: Equatable, Sendable {
+    public var model: ClaudeModel
+    public var notesEffort: String
+
+    public init(model: ClaudeModel = .opus55, notesEffort: String = "high") {
+        self.model = model
+        self.notesEffort = notesEffort
+    }
+}
+
+public enum UsageKind: Sendable {
+    case question
+    case notes
+}
+
+/// Questions about the transcript during a session, and notes afterwards. Each question is
+/// independent (no chat history); the transcript is sent as 5-minute blocks so completed
+/// ones are cached, with the current block split by minute.
 public final class Assistant: Sendable {
     public static let recentWindow: TimeInterval = 300
+    static let minute: TimeInterval = 60
 
     let client: ClaudeClient
     private let store: TranscriptStore
+    private let onUsage: (@Sendable (UsageKind, UsageReport) -> Void)?
+    private let config = LockedValue(AssistantConfiguration())
 
-    public init(client: ClaudeClient, store: TranscriptStore) {
+    public init(
+        client: ClaudeClient,
+        store: TranscriptStore,
+        onUsage: (@Sendable (UsageKind, UsageReport) -> Void)? = nil
+    ) {
         self.client = client
         self.store = store
+        self.onUsage = onUsage
+    }
+
+    public var configuration: AssistantConfiguration {
+        get { config.value }
+        set { config.value = newValue }
     }
 
     /// Streams the answer. Throws `AskError` before any network call when there is nothing
@@ -31,7 +61,9 @@ public final class Assistant: Sendable {
     public func ask(_ question: String, now: TimeInterval) async throws -> AsyncThrowingStream<String, Error> {
         guard await !store.isEmpty else { throw AskError.nothingYet }
         guard client.hasKey else { throw AskError.missingKey }
-        return client.stream(await buildAskRequest(question: question, now: now))
+        return client.stream(await buildAskRequest(question: question, now: now)) { [onUsage] in
+            onUsage?(.question, $0)
+        }
     }
 
     public func quick(_ action: QuickAction, now: TimeInterval) async throws -> AsyncThrowingStream<String, Error> {
@@ -54,23 +86,38 @@ public final class Assistant: Sendable {
 
     public func buildAskRequest(question: String, now: TimeInterval) async -> MessagesRequest {
         let completed = await store.completedBlocks(now: now)
-        let current = await store.currentBlock(now: now)
-        // The API rejects empty text blocks, so silent windows are left out; the cache
-        // breakpoint goes on the last completed window that has text.
+        let current = await store.segments.filter { Int($0.start / store.blockDuration) >= completed.count }
+        // Breakpoints (1-hour TTL, since questions in a lecture are often more than five
+        // minutes apart): the system prompt, the last completed 5-minute block with text,
+        // and the last completed minute of the current block. Empty text blocks are left
+        // out because the API rejects them.
         let lastWithText = completed.lastIndex { !$0.isEmpty }
         var content = completed.enumerated()
             .filter { !$0.element.isEmpty }
-            .map { TextBlock(text: Self.part($0.element), cached: $0.offset == lastWithText) }
-        if !current.isEmpty {
-            content.append(TextBlock(text: Self.part(current), cached: false))
-        }
+            .map { TextBlock(text: Self.part($0.element), cached: $0.offset == lastWithText, ttl: .oneHour) }
+        content += Self.minuteBlocks(current)
         content.append(TextBlock(text: "Question: \(question)", cached: false))
         return MessagesRequest(
+            model: configuration.model.id,
             maxTokens: 4000,
-            system: [TextBlock(text: Prompts.askSystem, cached: true)],
+            system: [TextBlock(text: Prompts.askSystem, cached: true, ttl: .oneHour)],
             messages: [Message(role: "user", content: content)],
             effort: "low"
         )
+    }
+
+    /// The current 5-minute block as one block per minute. A minute is complete once a line
+    /// from a later minute exists (final lines arrive late), so its text no longer changes
+    /// and it can carry a cache breakpoint.
+    private static func minuteBlocks(_ segments: [Segment]) -> [TextBlock] {
+        guard let last = segments.last else { return [] }
+        let lastMinute = Int(last.start / minute)
+        let minutes = Dictionary(grouping: segments) { Int($0.start / minute) }.sorted { $0.key < $1.key }
+        let lastComplete = minutes.last { $0.key < lastMinute }?.key
+        return minutes.map { index, lines in
+            TextBlock(text: part(lines.map(formatLine).joined(separator: "\n")),
+                      cached: index == lastComplete, ttl: .oneHour)
+        }
     }
 
     private static func part(_ text: String) -> String {
@@ -92,7 +139,10 @@ extension Assistant {
     ) async throws -> (title: String, markdown: String) {
         guard client.hasKey else { throw AskError.missingKey }
         var text = ""
-        for try await delta in client.stream(buildNotesRequest(transcript: transcript)) {
+        let stream = client.stream(buildNotesRequest(transcript: transcript)) { [onUsage] in
+            onUsage?(.notes, $0)
+        }
+        for try await delta in stream {
             text += delta
             progress(text.count)
         }
@@ -109,12 +159,29 @@ extension Assistant {
 
     public func buildNotesRequest(transcript: [Segment]) -> MessagesRequest {
         let lines = transcript.map(formatLine).joined(separator: "\n")
+        let configuration = configuration
         return MessagesRequest(
+            model: configuration.model.id,
             maxTokens: 64000,
             system: [TextBlock(text: Prompts.notesSystem, cached: false)],
             messages: [Message(role: "user", content: [TextBlock(text: "<transcript>\n\(lines)\n</transcript>", cached: false)])],
-            effort: "high",
+            effort: configuration.notesEffort,
             jsonSchema: Prompts.notesSchema
         )
+    }
+}
+
+/// A value guarded by a lock, so a `Sendable` class can hold settings that change.
+final class LockedValue<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: Value
+
+    init(_ value: Value) {
+        _value = value
+    }
+
+    var value: Value {
+        get { lock.withLock { _value } }
+        set { lock.withLock { _value = newValue } }
     }
 }

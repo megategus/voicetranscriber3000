@@ -43,6 +43,9 @@ struct VoiceTranscriberApp: App {
                 .onChange(of: settings.outputFolder, initial: true) { _, folder in
                     session.root = folder
                 }
+                .onChange(of: settings.assistantConfiguration, initial: true) { _, configuration in
+                    session.assistant?.configuration = configuration
+                }
         }
         .commands {
             CommandMenu("Session") {

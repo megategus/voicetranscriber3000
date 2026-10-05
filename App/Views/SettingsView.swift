@@ -1,4 +1,5 @@
 import AppKit
+import AssistantKit
 import SessionKit
 import SwiftUI
 
@@ -31,6 +32,21 @@ struct SettingsView: View {
                 Text("Stored in your macOS Keychain. Used for questions and notes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Picker("Model", selection: $settings.model) {
+                    ForEach(ClaudeModel.allCases, id: \.self) { model in
+                        Text(model.displayName).tag(model)
+                    }
+                }
+                Picker("Notes effort", selection: $settings.notesEffort) {
+                    Text("High").tag("high")
+                    Text("Medium").tag("medium")
+                    Text("Low").tag("low")
+                }
+                Text("Most of the cost is the notes: Claude's thinking and the written notes are billed as output. Medium effort thinks less and costs less; Sonnet 5.5 costs half as much as Opus 5.5. Each session folder has a usage.md with what it cost.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("Sessions") {

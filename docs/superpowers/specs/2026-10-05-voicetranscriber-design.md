@@ -177,8 +177,18 @@ Transcript line format: `[mm:ss] text` (`[h:mm:ss]` past one hour).
   2–4 s after the audio and could otherwise change a block already sent.
   Silent windows are kept as empty strings so window numbers never shift,
   but empty blocks are left out of requests (the API rejects empty text
-  blocks). `cache_control: {type: "ephemeral"}` is placed on the last
-  non-empty completed block; the in-progress block and the question follow it.
+  blocks). `cache_control: {type: "ephemeral", ttl: "1h"}` is placed on the
+  system prompt and the last non-empty completed block; the in-progress block
+  is split into one block per minute, with a breakpoint on the last completed
+  minute; the question comes last. The 1-hour TTL is used because questions
+  in a lecture are often more than five minutes apart, and a 5-minute entry
+  would expire and re-bill the whole transcript as a cache write.
+- **Cost tracking:** usage from `message_start` / `message_delta` is priced by
+  the model that served the response (list prices) and summed per session;
+  the done screen shows it and the session folder gets `usage.md`. Most of
+  the cost is the notes' output (thinking plus notes), which caching cannot
+  reduce; Settings offers notes effort (High / Medium / Low) and the model
+  (Claude Opus 5.5 / Claude Sonnet 5.5).
 
 ### 6.2 Ask (during recording)
 
@@ -239,6 +249,8 @@ Transcript line format: `[mm:ss] text` (`[h:mm:ss]` past one hour).
 - Output folder.
 - Re-transcribe full audio after stopping (default: on).
 - Show floating transcript panel (default: off).
+- Model: Claude Opus 5.5 (default) or Claude Sonnet 5.5.
+- Notes effort: High (default), Medium, Low.
 
 ## 9. Testing
 

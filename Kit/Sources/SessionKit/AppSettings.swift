@@ -1,3 +1,4 @@
+import AssistantKit
 import Foundation
 import Observation
 
@@ -12,6 +13,8 @@ public final class AppSettings {
         static let retranscribeAfterStop = "retranscribeAfterStop"
         static let showFloatingPanel = "showFloatingPanel"
         static let ignoredRecoveries = "ignoredRecoveries"
+        static let model = "claudeModel"
+        static let notesEffort = "notesEffort"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -26,6 +29,20 @@ public final class AppSettings {
 
     public var showFloatingPanel: Bool {
         didSet { defaults.set(showFloatingPanel, forKey: Key.showFloatingPanel) }
+    }
+
+    /// The Claude model for questions and notes.
+    public var model: ClaudeModel {
+        didSet { defaults.set(model.rawValue, forKey: Key.model) }
+    }
+
+    /// Effort for notes: "high", "medium", or "low". Lower effort thinks less (cheaper).
+    public var notesEffort: String {
+        didSet { defaults.set(notesEffort, forKey: Key.notesEffort) }
+    }
+
+    public var assistantConfiguration: AssistantConfiguration {
+        AssistantConfiguration(model: model, notesEffort: notesEffort)
     }
 
     /// Paths of interrupted sessions the user chose not to recover; not offered again.
@@ -47,5 +64,7 @@ public final class AppSettings {
         retranscribeAfterStop = defaults.object(forKey: Key.retranscribeAfterStop) as? Bool ?? true
         showFloatingPanel = defaults.bool(forKey: Key.showFloatingPanel)
         ignoredRecoveries = defaults.stringArray(forKey: Key.ignoredRecoveries) ?? []
+        model = defaults.string(forKey: Key.model).flatMap(ClaudeModel.init(rawValue:)) ?? .opus55
+        notesEffort = defaults.string(forKey: Key.notesEffort) ?? "high"
     }
 }

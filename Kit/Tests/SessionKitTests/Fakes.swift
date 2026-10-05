@@ -183,11 +183,14 @@ final class HTTPStub: URLProtocol, @unchecked Sendable {
 
     override func stopLoading() {}
 
+    /// Usage in every scripted reply: 100 input + 50 output tokens on Opus 5.5 = $0.0014.
     static func sse(_ text: String, stop: String = "end_turn") -> String {
         """
+        data: {"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}
+
         data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\(text)"}}
 
-        data: {"type":"message_delta","delta":{"stop_reason":"\(stop)"}}
+        data: {"type":"message_delta","delta":{"stop_reason":"\(stop)"},"usage":{"output_tokens":50}}
 
         """
     }

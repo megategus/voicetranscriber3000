@@ -423,3 +423,13 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
 **As built:** `SessionController(permissions:)` is optional (nil skips the check, for tests); the app passes `SystemPermissions()`. Screen Recording has no "denied" state in macOS, so "not granted" is treated as undetermined and requested once; the grant needs a relaunch. `blockedPermission` drives the Open System Settings button. **Ignore** in the recovery sheet persists (`AppSettings.ignoredRecoveries`); **Recover** closes the sheet so progress is visible. The floating panel has its own Pause button.
 
 **Added on request — Pause / Resume:** `pause()`, `resume()`, `togglePause()`, `isPaused`, `skippedDuration`. While paused, chunks are dropped before the recorder and transcriber; admitted chunks are re-stamped with contiguous `startSample`s, so the recording, transcripts, and timer skip the paused stretch. Session menu item ⇧⌘P. Tests: `PauseTests` (discarded audio absent from `audio.m4a` and the live pass, no-audio banner off while paused, pause only while recording).
+
+---
+
+### Follow-up: cost controls (after the first real sessions)
+
+A 6-minute session cost $0.12, mostly notes output (high-effort thinking plus the notes). Added, each test-first:
+- `TokenUsage`, `Pricing`, `ClaudeModel`, `UsageReport` (AssistantKit); `SSEParser` collects usage and the serving model; `ClaudeClient.stream/complete(_:onUsage:)` report it (also on refusal/cut-off).
+- `SessionCost` + `usage.md`; done screen and Ask panel show cost.
+- Settings: model (Opus 5.5 / Sonnet 5.5) and notes effort (high / medium / low) via `AssistantConfiguration`.
+- Ask caching: 1-hour TTL on all breakpoints; the in-progress 5-minute block split per minute with a breakpoint on the last completed minute (≤ 3 breakpoints).

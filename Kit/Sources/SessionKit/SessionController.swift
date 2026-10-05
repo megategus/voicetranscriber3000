@@ -85,8 +85,11 @@ public final class SessionController {
     public var root: URL
     public var notes: (any NotesMaking)?
 
-    /// Questions during recording; nil when no Claude client was given.
-    public let assistant: Assistant?
+    /// Questions during recording and notes; nil when no Claude client was given.
+    public private(set) var assistant: Assistant?
+    /// Claude cost for this session (questions and notes), at list prices.
+    public private(set) var cost = SessionCost()
+    private let costs = CostAccumulator()
     public private(set) var askQuestion = ""
     public private(set) var askAnswer = ""
     public private(set) var askProblem: AskProblem?
@@ -139,12 +142,18 @@ public final class SessionController {
     ) {
         self.permissions = permissions
         self.root = root
-        assistant = claude.map { [store] in Assistant(client: $0, store: store) }
         self.transcriber = transcriber
         self.makeSource = makeSource
         self.notes = notes
         self.retranscribe = retranscribe
         self.clock = clock
+        if let claude {
+            let costs = costs
+            assistant = Assistant(client: claude, store: store) { [weak self] kind, report in
+                costs.add(kind, report)
+                Task { @MainActor in self?.cost = costs.value }
+            }
+        }
     }
 
     public var isBusy: Bool {
@@ -402,6 +411,10 @@ public final class SessionController {
         var messages = messages
         func done(_ written: Bool, _ message: String? = nil, needsSettings: Bool = false) {
             if let message { messages.append(message) }
+            cost = costs.value
+            if !cost.isEmpty {
+                try? writer.writeUsage(cost.markdown)
+            }
             state = .done(DoneInfo(
                 folder: writer.folder,
                 notesWritten: written,
@@ -531,6 +544,8 @@ public final class SessionController {
     }
 
     private func resetLiveState() {
+        costs.reset()
+        cost = SessionCost()
         askGeneration += 1
         askQuestion = ""
         askAnswer = ""

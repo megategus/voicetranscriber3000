@@ -16,6 +16,8 @@ private func freshDefaults() -> UserDefaults {
         .appendingPathComponent("Documents/Transcripts", isDirectory: true))
     #expect(settings.retranscribeAfterStop == true)
     #expect(settings.showFloatingPanel == false)
+    #expect(settings.model == .opus55)
+    #expect(settings.notesEffort == "high")
 }
 
 @MainActor @Test func changesPersistAcrossInstances() {
@@ -24,8 +26,12 @@ private func freshDefaults() -> UserDefaults {
     settings.outputFolder = URL(fileURLWithPath: "/tmp/Lectures", isDirectory: true)
     settings.retranscribeAfterStop = false
     settings.showFloatingPanel = true
+    settings.model = .sonnet55
+    settings.notesEffort = "medium"
 
     let reloaded = AppSettings(defaults: defaults)
+    #expect(reloaded.model == .sonnet55)
+    #expect(reloaded.notesEffort == "medium")
     #expect(reloaded.outputFolder.path == "/tmp/Lectures")
     #expect(reloaded.retranscribeAfterStop == false)
     #expect(reloaded.showFloatingPanel == true)
