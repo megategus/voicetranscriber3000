@@ -70,3 +70,11 @@ private func B(_ text: String) -> Segment { seg(2, text) }
     _ = c.ingest([A("Hello world"), B("this is a test")])
     #expect(c.flush() == [B("this is a test")])
 }
+
+@Test func confirmAllButLastLeavesTail() {
+    var c = SegmentConfirmer()
+    _ = c.ingest([A("one"), B("two"), seg(4, "three")])
+    #expect(c.confirmAllButLast() == [A("one"), B("two")])
+    #expect(c.confirmedEnd == 4)
+    #expect(c.flush() == [seg(4, "three")])
+}

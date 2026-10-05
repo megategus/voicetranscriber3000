@@ -44,6 +44,17 @@ public struct SegmentConfirmer: Sendable {
         return rest
     }
 
+    /// Confirms every unconfirmed segment from the last decode except its final one, which
+    /// may still be growing. Used when confirmation stalls because Whisper keeps shifting
+    /// segment boundaries, so the decode window never has to drop audio.
+    public mutating func confirmAllButLast() -> [Segment] {
+        guard previous.count > 1 else { return [] }
+        let confirmed = Array(previous.dropLast())
+        previous = Array(previous.suffix(1))
+        confirmedEnd = confirmed.last!.end
+        return confirmed
+    }
+
     private static func agree(_ a: Segment, _ b: Segment) -> Bool {
         abs(a.start - b.start) <= startTolerance && normalize(a.text) == normalize(b.text)
     }

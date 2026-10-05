@@ -19,7 +19,7 @@ the session runs, and produces high-quality study notes when the session ends.
 | Audio source | One source per session, picked at Start: **Computer audio** or **Microphone**. Never mixed. |
 | Speaker labels | None |
 | Live assistance | Live transcript + on-demand questions. No auto-refreshing notes. |
-| Transcription | Local, on-device (WhisperKit, `large-v3-turbo`) |
+| Transcription | Local, on-device (WhisperKit, large-v3-turbo = `large-v3-v20240930`) |
 | Notes / Q&A | Claude API, model `claude-opus-5-5` |
 | Output | Markdown files in a user-chosen folder, one folder per session |
 | Raw audio | Kept, as AAC `.m4a` |
@@ -63,7 +63,7 @@ the session runs, and produces high-quality study notes when the session ends.
 | `MicrophoneSource` | `AVAudioEngine` input node tap; resamples; restarts on `AVAudioEngineConfigurationChange`. | AVFoundation |
 | `AudioRecorder` | Tees the same chunks to `audio.caf` (crash-safe); converts to `audio.m4a` (AAC) on stop. | AVFoundation |
 | `Transcriber` (protocol) | `transcribe(AsyncStream<AudioChunk>) -> AsyncStream<TranscriptEvent>` for live; `transcribeFile(URL, progress:) async throws -> [Segment]` for the final pass. | — |
-| `WhisperKitTranscriber` | WhisperKit implementation; model `large-v3-turbo`, `language: "en"`. Loaded at app launch. | WhisperKit (SPM) |
+| `WhisperKitTranscriber` | WhisperKit implementation; model large-v3-turbo (`large-v3-v20240930` in WhisperKit), `language: "en"`. Loaded at app launch. | WhisperKit (SPM) |
 | `TranscriptStore` (actor) | Holds finalized `Segment`s in order plus the current partial text. Single source of truth for the UI, writer, and assistant. Exposes 5-minute blocks (section 6.1). | — |
 | `SessionWriter` | Creates the session folder; appends each final segment to `transcript.live.md`; writes `transcript.md`, `notes.md`, `qa.md`; renames the folder once a title exists. | FileManager |
 | `ClaudeClient` | Minimal Messages API client: request building, SSE streaming via `URLSession.bytes(for:)`, error mapping, retries. Reads the API key from Keychain. | URLSession, Security |
@@ -105,7 +105,7 @@ enum AudioSourceKind { case computerAudio, microphone }
 ## 4. Live transcription
 
 - Audio chunks append to a rolling buffer. About every 1 s, the
-  transcriber decodes the unconfirmed region of the buffer (capped at 30 s).
+  transcriber decodes the unconfirmed region of the buffer, oldest audio first (capped at 30 s), so falling behind delays text but never skips audio.
 - **Stalled confirmation:** if unconfirmed audio exceeds 25 s, every segment
   of the latest decode except the last is confirmed as is, so the 30 s cap
   never drops audio from the live transcript.
