@@ -1,0 +1,8 @@
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Cut"}}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},"usage":{"output_tokens":4000}}
+
+event: message_stop
+data: {"type":"message_stop"}
