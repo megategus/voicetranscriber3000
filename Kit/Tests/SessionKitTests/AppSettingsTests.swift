@@ -44,3 +44,12 @@ private func freshDefaults() -> UserDefaults {
     settings.ignoreRecovery(URL(fileURLWithPath: "/tmp/T/2026-10-05 09-00", isDirectory: true))
     #expect(AppSettings(defaults: defaults).ignoredRecoveries == ["/tmp/T/2026-10-05 09-00"])
 }
+
+@MainActor @Test func appearanceDefaultsToSystemAndPersists() {
+    let defaults = freshDefaults()
+    let settings = AppSettings(defaults: defaults)
+    #expect(settings.appearance == .system)
+    settings.appearance = .dark
+    #expect(AppSettings(defaults: defaults).appearance == .dark)
+    #expect(Appearance.allCases == [.system, .light, .dark])
+}

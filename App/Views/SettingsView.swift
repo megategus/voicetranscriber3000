@@ -51,6 +51,15 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            Section("Appearance") {
+                Picker("Theme", selection: $settings.appearance) {
+                    ForEach(Appearance.allCases, id: \.self) { appearance in
+                        Text(appearance.displayName).tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
             Section("Sessions") {
                 LabeledContent("Output folder") {
                     HStack {

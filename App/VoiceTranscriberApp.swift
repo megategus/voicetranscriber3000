@@ -1,3 +1,4 @@
+import AppKit
 import AssistantKit
 import CaptureKit
 import SessionKit
@@ -45,6 +46,14 @@ struct VoiceTranscriberApp: App {
                 }
                 .onChange(of: settings.assistantConfiguration, initial: true) { _, configuration in
                     session.assistant?.configuration = configuration
+                }
+                .onChange(of: settings.appearance, initial: true) { _, appearance in
+                    // App-wide, so Settings and the floating panel follow too.
+                    NSApp.appearance = switch appearance {
+                    case .system: nil
+                    case .light: NSAppearance(named: .aqua)
+                    case .dark: NSAppearance(named: .darkAqua)
+                    }
                 }
         }
         .commands {

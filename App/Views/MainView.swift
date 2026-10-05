@@ -19,13 +19,11 @@ struct MainView: View {
             banners
             HSplitView {
                 TranscriptView(segments: session.segments, partial: session.partial)
-                    .background(Theme.softPaper, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
-                    .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+                    .cardSurface()
                     .padding(.trailing, 6)
                     .frame(minWidth: 380)
                 AskPanel(session: session)
-                    .background(Theme.softPaper, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
-                    .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+                    .cardSurface()
                     .padding(.leading, 6)
                     .frame(minWidth: 320, idealWidth: 380)
             }
@@ -86,7 +84,7 @@ struct MainView: View {
             if session.state == .recording {
                 Button { Task { await session.stop() } } label: {
                     HStack(spacing: 8) {
-                        WaveformView(live: !session.isPaused, level: session.level, color: Theme.parchment)
+                        WaveformView(live: !session.isPaused, level: session.level, color: Theme.onInk)
                         Text("Stop")
                     }
                 }
@@ -107,7 +105,7 @@ struct MainView: View {
             } else {
                 Button { Task { await session.start(sourceKind) } } label: {
                     HStack(spacing: 8) {
-                        WaveformView(live: false, color: Theme.parchment)
+                        WaveformView(live: false, color: Theme.onInk)
                         Text("Start")
                     }
                 }
@@ -274,6 +272,6 @@ struct Notice<Actions: View>: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(RoundedRectangle(cornerRadius: Theme.inputRadius).strokeBorder(Theme.warmMist))
+        .overlay(Theme.shape(Theme.inputRadius).strokeBorder(Theme.warmMist))
     }
 }

@@ -2,6 +2,19 @@ import AssistantKit
 import Foundation
 import Observation
 
+/// Light or dark look; `system` follows macOS.
+public enum Appearance: String, CaseIterable, Sendable {
+    case system, light, dark
+
+    public var displayName: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+}
+
 /// User preferences, stored in `UserDefaults`. The API key is not here; see `KeychainStore`.
 @MainActor @Observable
 public final class AppSettings {
@@ -15,6 +28,7 @@ public final class AppSettings {
         static let ignoredRecoveries = "ignoredRecoveries"
         static let model = "claudeModel"
         static let notesEffort = "notesEffort"
+        static let appearance = "appearance"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -39,6 +53,10 @@ public final class AppSettings {
     /// Effort for notes: "high", "medium", or "low". Lower effort thinks less (cheaper).
     public var notesEffort: String {
         didSet { defaults.set(notesEffort, forKey: Key.notesEffort) }
+    }
+
+    public var appearance: Appearance {
+        didSet { defaults.set(appearance.rawValue, forKey: Key.appearance) }
     }
 
     public var assistantConfiguration: AssistantConfiguration {
@@ -66,5 +84,6 @@ public final class AppSettings {
         ignoredRecoveries = defaults.stringArray(forKey: Key.ignoredRecoveries) ?? []
         model = defaults.string(forKey: Key.model).flatMap(ClaudeModel.init(rawValue:)) ?? .opus55
         notesEffort = defaults.string(forKey: Key.notesEffort) ?? "high"
+        appearance = defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .system
     }
 }

@@ -1,8 +1,9 @@
 import SwiftUI
 
 // The pill buttons below adapt the "Skiper 25" micro-interaction (Skiper UI, by
-// @gurvinder-singh02, https://gxuri.me): a rounded pill whose padding springs outward on
-// hover and press, with a five-bar waveform. Free version, attribution required.
+// @gurvinder-singh02, https://gxuri.me): a button whose padding springs outward on hover and
+// press, with a five-bar waveform. Free version, attribution required. Here the shape is a
+// softly rounded rectangle instead of a full pill.
 
 /// Five thin bars. When `live`, they bounce to random heights scaled by the audio level;
 /// otherwise they rest flat.
@@ -42,8 +43,8 @@ struct WaveformView: View {
     }
 }
 
-/// The main pill: filled (ink on parchment) or outlined (hairline warm-mist border). Padding
-/// springs outward on hover and press.
+/// The main button: filled (ink, text in the canvas color) or outlined (hairline warm-mist
+/// border). Padding springs outward on hover and press.
 struct PillButtonStyle: ButtonStyle {
     enum Kind { case filled, outlined }
 
@@ -67,18 +68,18 @@ struct PillButtonStyle: ButtonStyle {
             let horizontal: CGFloat = large ? (expanded ? 24 : 18) : (expanded ? 16 : 12)
             configuration.label
                 .font(large ? Theme.label : Theme.small.weight(.medium))
-                .foregroundStyle(kind == .filled ? Theme.parchment : Theme.ink)
+                .foregroundStyle(kind == .filled ? Theme.onInk : Theme.ink)
                 .padding(.vertical, vertical)
                 .padding(.horizontal, horizontal)
                 .background {
-                    Capsule().fill(kind == .filled ? Theme.ink : Theme.softPaper)
+                    Theme.shape(Theme.controlRadius).fill(kind == .filled ? Theme.ink : Theme.softPaper)
                 }
                 .overlay {
                     if kind == .outlined {
-                        Capsule().strokeBorder(Theme.warmMist, lineWidth: 1)
+                        Theme.shape(Theme.controlRadius).strokeBorder(Theme.warmMist, lineWidth: 1)
                     }
                 }
-                .contentShape(Capsule())
+                .contentShape(Theme.shape(Theme.controlRadius))
                 .opacity(isEnabled ? 1 : 0.4)
                 .animation(.spring(duration: 1, bounce: 0.6), value: expanded)
                 .onHover { hovering = $0 }
@@ -104,18 +105,18 @@ struct GhostButtonStyle: ButtonStyle {
                 .padding(.vertical, 6)
                 .padding(.horizontal, 12)
                 .background(
-                    RoundedRectangle(cornerRadius: Theme.buttonRadius)
+                    Theme.shape(Theme.buttonRadius)
                         .fill(configuration.isPressed ? Theme.warmMist.opacity(0.35) : .clear)
                 )
-                .overlay(RoundedRectangle(cornerRadius: Theme.buttonRadius).strokeBorder(Theme.warmMist))
-                .contentShape(RoundedRectangle(cornerRadius: Theme.buttonRadius))
+                .overlay(Theme.shape(Theme.buttonRadius).strokeBorder(Theme.warmMist))
+                .contentShape(Theme.shape(Theme.buttonRadius))
                 .opacity(isEnabled ? 1 : 0.4)
                 .onHover { hovering = $0 }
         }
     }
 }
 
-/// Pill chip: ink text on a transparent pill; selected chips fill with deep teal.
+/// Chip: ink text on a transparent, slightly rounded chip; selected chips fill with deep teal.
 struct ChipButtonStyle: ButtonStyle {
     var selected = false
 
@@ -132,23 +133,24 @@ struct ChipButtonStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .font(Theme.body)
-                .foregroundStyle(selected ? Color.white : Theme.ink)
+                .foregroundStyle(selected ? Theme.onTeal : Theme.ink)
                 .padding(.vertical, 6)
                 .padding(.horizontal, 12)
                 .background {
-                    Capsule().fill(selected ? Theme.teal : (hovering || configuration.isPressed ? Theme.warmMist.opacity(0.35) : .clear))
+                    Theme.shape(Theme.chipRadius)
+                        .fill(selected ? Theme.teal : (hovering || configuration.isPressed ? Theme.warmMist.opacity(0.35) : .clear))
                 }
                 .overlay {
-                    if !selected { Capsule().strokeBorder(Theme.warmMist) }
+                    if !selected { Theme.shape(Theme.chipRadius).strokeBorder(Theme.warmMist) }
                 }
-                .contentShape(Capsule())
+                .contentShape(Theme.shape(Theme.chipRadius))
                 .opacity(isEnabled ? 1 : 0.4)
                 .onHover { hovering = $0 }
         }
     }
 }
 
-/// Small status pill (paused, lagging): hairline outline, graphite text.
+/// Small status tag (paused, lagging): hairline outline, graphite text.
 struct StatusPill: View {
     let text: String
     let systemImage: String
@@ -159,13 +161,13 @@ struct StatusPill: View {
             .monospacedDigit()
             .foregroundStyle(Theme.graphite)
             .padding(.vertical, 3)
-            .padding(.horizontal, 10)
-            .overlay(Capsule().strokeBorder(Theme.warmMist))
+            .padding(.horizontal, 8)
+            .overlay(Theme.shape(Theme.chipRadius).strokeBorder(Theme.warmMist))
     }
 }
 
-/// Text field styled as the hero input: parchment, 12 pt corners, hairline border, teal glow
-/// when focused.
+/// Text field styled as the hero input: canvas color, 8 pt corners, hairline border, teal
+/// glow when focused.
 struct InputFieldStyle: ViewModifier {
     var focused: Bool
 
@@ -175,10 +177,10 @@ struct InputFieldStyle: ViewModifier {
             .font(Theme.body)
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
-            .background(Theme.parchment, in: RoundedRectangle(cornerRadius: Theme.inputRadius))
+            .background(Theme.parchment, in: Theme.shape(Theme.inputRadius))
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.inputRadius)
-                    .strokeBorder(focused ? Theme.teal.opacity(0.4) : Theme.warmMist, lineWidth: focused ? 2 : 1)
+                Theme.shape(Theme.inputRadius)
+                    .strokeBorder(focused ? Theme.focusRing : Theme.warmMist, lineWidth: focused ? 2 : 1)
             )
             .animation(.easeOut(duration: 0.15), value: focused)
     }

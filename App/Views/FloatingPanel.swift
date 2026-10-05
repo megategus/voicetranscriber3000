@@ -60,7 +60,7 @@ private struct FloatingTranscript: View {
             }
             .padding(.horizontal, 4)
             TranscriptView(segments: session.segments, partial: session.partial)
-                .background(Theme.softPaper, in: RoundedRectangle(cornerRadius: Theme.inputRadius))
+                .background(Theme.softPaper, in: Theme.shape(Theme.inputRadius))
         }
         .padding(Theme.gap)
         .frame(minWidth: 300, minHeight: 160)
