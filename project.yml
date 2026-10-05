@@ -1,0 +1,45 @@
+name: VoiceTranscriber
+options:
+  bundleIdPrefix: local.voicetranscriber
+  deploymentTarget:
+    macOS: "14.0"
+packages:
+  Kit:
+    path: Kit
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    ARCHS: arm64
+targets:
+  VoiceTranscriber:
+    type: application
+    platform: macOS
+    sources:
+      - App
+    dependencies:
+      - package: Kit
+        product: TranscriptCore
+      - package: Kit
+        product: AssistantKit
+      - package: Kit
+        product: CaptureKit
+      - package: Kit
+        product: SessionKit
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: VoiceTranscriber
+        LSApplicationCategoryType: public.app-category.education
+        NSMicrophoneUsageDescription: VoiceTranscriber records the microphone to transcribe in-person lectures.
+    entitlements:
+      path: App/VoiceTranscriber.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.device.audio-input: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.voicetranscriber.app
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        # Set this to your Personal Team ID (Xcode → Settings → Accounts).
+        DEVELOPMENT_TEAM: ""

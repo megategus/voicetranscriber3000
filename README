@@ -1,1 +1,43 @@
+# VoiceTranscriber
 
+A personal macOS app that shows a live English transcript of computer audio
+or the microphone, answers questions about it during the session, and writes
+study notes with Claude when the session ends.
+
+- Design spec: `docs/superpowers/specs/2026-10-05-voicetranscriber-design.md`
+- Implementation plan: `docs/superpowers/plans/2026-10-05-voicetranscriber.md`
+
+## Prerequisites
+
+- A Mac with Apple Silicon (M3/M4 or newer), macOS 14+
+- Xcode 16+
+- XcodeGen: `brew install xcodegen`
+- An Apple ID added in Xcode → Settings → Accounts (the free "Personal Team"
+  is enough). Signing with it keeps macOS privacy permissions across rebuilds.
+
+## Run the tests
+
+    cd Kit && swift test
+
+`TranscriptCore` and `AssistantKit` also build and test on Linux; the
+capture and session targets only exist on macOS.
+
+## Run the app
+
+    xcodegen generate && open VoiceTranscriber.xcodeproj
+
+Select the `VoiceTranscriber` target → Signing & Capabilities → set Team to
+your Personal Team (or set `DEVELOPMENT_TEAM` in `project.yml`), then Run (⌘R).
+
+## Design and credits
+
+The interface uses a warm parchment palette (tokens in `App/Design/Theme.swift`): ink text,
+hairline warm-gray borders, softly rounded corners, and one deep teal reserved for selected
+states. A warm charcoal dark theme follows macOS by default; Settings → Appearance can force
+Light or Dark, or switch to Pink — a rose palette (#FADAD9 #F3C3C5 #E9ABAE #E0959C #D78289
+#CE6F79 #C65C69) with #C65C69 buttons, plus a light card tint and deep rose text added for
+readable contrast.
+
+The Start / Stop / Pause / Resume buttons adapt the "Skiper 25" micro-interaction from
+[Skiper UI](https://gxuri.me) by @gurvinder-singh02 (springy padding on hover and press, a
+five-bar waveform), used under its free license, which requires this attribution.
