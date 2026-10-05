@@ -43,20 +43,27 @@ private struct FloatingTranscript: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            HStack {
+            HStack(spacing: Theme.gap) {
+                WaveformView(live: !session.isPaused, level: session.level, color: Theme.ink)
                 Text(formatTimestamp(session.elapsed))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                    .font(Theme.timestamp)
+                    .foregroundStyle(Theme.graphite)
                 if session.isPaused {
-                    Text("Paused").foregroundStyle(.orange)
+                    StatusPill(text: "Paused", systemImage: "pause.circle")
                 }
                 Spacer()
-                Button(session.isPaused ? "Resume" : "Pause") { session.togglePause() }
-                    .controlSize(.small)
+                Button { session.togglePause() } label: {
+                    Label(session.isPaused ? "Resume" : "Pause",
+                          systemImage: session.isPaused ? "play.fill" : "pause.fill")
+                }
+                .buttonStyle(PillButtonStyle(kind: .outlined, large: false))
             }
+            .padding(.horizontal, 4)
             TranscriptView(segments: session.segments, partial: session.partial)
+                .background(Theme.softPaper, in: RoundedRectangle(cornerRadius: Theme.inputRadius))
         }
-        .padding(8)
-        .frame(minWidth: 280, minHeight: 140)
+        .padding(Theme.gap)
+        .frame(minWidth: 300, minHeight: 160)
+        .parchmentSurface()
     }
 }

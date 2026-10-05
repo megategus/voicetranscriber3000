@@ -19,14 +19,20 @@ struct MainView: View {
             banners
             HSplitView {
                 TranscriptView(segments: session.segments, partial: session.partial)
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    .background(Theme.softPaper, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+                    .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+                    .padding(.trailing, 6)
                     .frame(minWidth: 380)
                 AskPanel(session: session)
+                    .background(Theme.softPaper, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+                    .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+                    .padding(.leading, 6)
                     .frame(minWidth: 320, idealWidth: 380)
             }
             footer
         }
-        .padding()
+        .padding(Theme.cardPadding)
+        .parchmentSurface()
         .task { findUnfinished() }
         .sheet(isPresented: $showRecovery) {
             RecoveryView(
@@ -68,75 +74,81 @@ struct MainView: View {
     // MARK: - Top row
 
     private var controls: some View {
-        HStack(spacing: 12) {
-            Picker("Source", selection: $sourceKind) {
-                ForEach(AudioSourceKind.allCases, id: \.self) { kind in
-                    Text(kind.displayName).tag(kind)
-                }
+        HStack(spacing: Theme.gap) {
+            ForEach(AudioSourceKind.allCases, id: \.self) { kind in
+                Button(kind.displayName) { sourceKind = kind }
+                    .buttonStyle(ChipButtonStyle(selected: sourceKind == kind))
+                    .disabled(session.isBusy)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .disabled(session.isBusy)
+
+            Divider().frame(height: 20).padding(.horizontal, 4)
 
             if session.state == .recording {
-                Button("Stop") { Task { await session.stop() } }
-                    .controlSize(.large)
-                    .keyboardShortcut(.defaultAction)
-                Button(session.isPaused ? "Resume" : "Pause") { session.togglePause() }
-                    .controlSize(.large)
-                    .help("Skip an ad or interruption: paused audio is not recorded or transcribed (⇧⌘P)")
+                Button { Task { await session.stop() } } label: {
+                    HStack(spacing: 8) {
+                        WaveformView(live: !session.isPaused, level: session.level, color: Theme.parchment)
+                        Text("Stop")
+                    }
+                }
+                .buttonStyle(PillButtonStyle(kind: .filled))
+                .keyboardShortcut(.defaultAction)
+
+                Button { session.togglePause() } label: {
+                    Label(session.isPaused ? "Resume" : "Pause",
+                          systemImage: session.isPaused ? "play.fill" : "pause.fill")
+                }
+                .buttonStyle(PillButtonStyle(kind: .outlined))
+                .help("Skip an ad or interruption: paused audio is not recorded or transcribed (⇧⌘P)")
+
                 Text(formatTimestamp(session.elapsed))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                    .font(Theme.label.monospacedDigit())
+                    .foregroundStyle(Theme.graphite)
+                    .padding(.leading, 4)
             } else {
-                Button("Start") { Task { await session.start(sourceKind) } }
-                    .controlSize(.large)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(session.isBusy || !speechModel.isLoaded)
+                Button { Task { await session.start(sourceKind) } } label: {
+                    HStack(spacing: 8) {
+                        WaveformView(live: false, color: Theme.parchment)
+                        Text("Start")
+                    }
+                }
+                .buttonStyle(PillButtonStyle(kind: .filled))
+                .keyboardShortcut(.defaultAction)
+                .disabled(session.isBusy || !speechModel.isLoaded)
             }
 
             Spacer()
 
+            if session.isPaused {
+                StatusPill(text: "Paused · \(formatTimestamp(session.skippedDuration)) skipped", systemImage: "pause.circle")
+            }
+            if session.isLagging, !session.isPaused {
+                StatusPill(text: "Transcription lagging", systemImage: "tortoise")
+            }
+
             SettingsLink {
                 Image(systemName: "gearshape")
             }
+            .buttonStyle(GhostButtonStyle())
             .help("Settings")
-
-            if session.isPaused {
-                Label("Paused · \(formatTimestamp(session.skippedDuration)) skipped", systemImage: "pause.circle.fill")
-                    .font(.callout)
-                    .monospacedDigit()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(.orange.opacity(0.2), in: Capsule())
-            }
-
-            if session.isLagging, !session.isPaused {
-                Label("Transcription lagging", systemImage: "tortoise")
-                    .font(.callout)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(.orange.opacity(0.2), in: Capsule())
-            }
         }
+        .animation(.spring(duration: 0.4, bounce: 0.3), value: session.state)
     }
 
     @ViewBuilder
     private var modelStatus: some View {
         if let error = speechModel.error {
-            HStack {
-                Text("Could not load the speech model: \(error)")
-                    .foregroundStyle(.red)
+            Notice(systemImage: "exclamationmark.triangle", text: "Could not load the speech model: \(error)") {
                 Button("Retry") { Task { await speechModel.load() } }
+                    .buttonStyle(GhostButtonStyle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         } else if !speechModel.isLoaded {
-            HStack {
+            HStack(spacing: Theme.gap) {
                 ProgressView(value: speechModel.progress)
                     .frame(width: 160)
                 Text("Loading speech model… \(Int(speechModel.progress * 100))%")
-                    .foregroundStyle(.secondary)
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.graphite)
+                    .monospacedDigit()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -145,10 +157,7 @@ struct MainView: View {
     @ViewBuilder
     private var banners: some View {
         if session.state == .recording, session.noAudio, !session.isPaused {
-            Label("No audio detected — check the source.", systemImage: "speaker.slash")
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
-                .background(.yellow.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
+            Notice(systemImage: "speaker.slash", text: "No audio detected — check the source.") { EmptyView() }
         }
     }
 
@@ -161,21 +170,19 @@ struct MainView: View {
             EmptyView()
         case .finalizing(let step):
             finalizing(step)
+                .card(padding: 12)
         case .done(let info):
             done(info)
+                .card()
         case .failed(let message):
-            HStack {
-                Text(message)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+            Notice(systemImage: "exclamationmark.triangle", text: message) {
                 if let kind = session.blockedPermission {
                     Button("Open System Settings") {
                         NSWorkspace.shared.open(SystemPermissions.settingsURL(for: kind))
                     }
+                    .buttonStyle(GhostButtonStyle())
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -189,7 +196,9 @@ struct MainView: View {
                 ProgressView(value: progress)
                     .frame(width: 160)
                 Text("Re-transcribing full audio… \(Int(progress * 100))%")
+                    .monospacedDigit()
                 Button("Cancel") { session.cancelRetranscription() }
+                    .buttonStyle(GhostButtonStyle())
             case .writingNotes:
                 ProgressView().controlSize(.small)
                 Text(session.notesCharacters > 0
@@ -199,38 +208,72 @@ struct MainView: View {
             }
             Spacer()
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Theme.graphite)
     }
 
     private func done(_ info: DoneInfo) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Saved to \(info.folder.lastPathComponent)")
+        VStack(alignment: .leading, spacing: Theme.gap) {
+            Text(info.folder.lastPathComponent)
+                .font(Theme.title)
                 .textSelection(.enabled)
             if let message = info.message {
                 Text(message)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.graphite)
             }
             if !session.cost.isEmpty {
-                Text("Claude cost: \(SessionCost.dollars(session.cost.total)) (notes \(SessionCost.dollars(session.cost.notes)) · \(session.cost.questionCount) questions \(SessionCost.dollars(session.cost.questions)))")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text("Claude cost \(SessionCost.dollars(session.cost.total)) · notes \(SessionCost.dollars(session.cost.notes)) · \(session.cost.questionCount) questions \(SessionCost.dollars(session.cost.questions))")
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.ash)
             }
-            HStack {
+            HStack(spacing: Theme.gap) {
+                if info.notesWritten {
+                    Button {
+                        NSWorkspace.shared.open(info.folder.appendingPathComponent(SessionWriter.FileName.notes))
+                    } label: {
+                        Label("Open notes", systemImage: "doc.text")
+                    }
+                    .buttonStyle(PillButtonStyle(kind: .filled, large: false))
+                } else if session.canGenerateNotes {
+                    Button {
+                        Task { await session.generateNotes() }
+                    } label: {
+                        Label("Generate notes", systemImage: "sparkles")
+                    }
+                    .buttonStyle(PillButtonStyle(kind: .filled, large: false))
+                    if info.needsSettings {
+                        SettingsLink { Text("Open Settings") }
+                            .buttonStyle(GhostButtonStyle())
+                    }
+                }
                 Button("Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([info.folder])
                 }
-                if info.notesWritten {
-                    Button("Open notes") {
-                        NSWorkspace.shared.open(info.folder.appendingPathComponent(SessionWriter.FileName.notes))
-                    }
-                } else if session.canGenerateNotes {
-                    Button("Generate notes") { Task { await session.generateNotes() } }
-                    if info.needsSettings {
-                        SettingsLink { Text("Open Settings") }
-                    }
-                }
+                .buttonStyle(GhostButtonStyle())
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// An inline notice: icon and text in ink on a hairline-bordered strip, with optional actions.
+struct Notice<Actions: View>: View {
+    let systemImage: String
+    let text: String
+    @ViewBuilder var actions: Actions
+
+    var body: some View {
+        HStack(spacing: Theme.gap) {
+            Image(systemName: systemImage)
+                .foregroundStyle(Theme.graphite)
+            Text(text)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            actions
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(RoundedRectangle(cornerRadius: Theme.inputRadius).strokeBorder(Theme.warmMist))
     }
 }

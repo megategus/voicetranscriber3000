@@ -78,3 +78,17 @@ private func recording(source: FakeSource, transcriber: FakeTranscriber = FakeTr
     #expect(!session.isPaused)
     await session.stop()
 }
+
+/// The waveform on the Stop button follows the live audio level.
+@MainActor @Test func levelFollowsAudioAndDropsWhenPaused() async throws {
+    let source = FakeSource(seconds: 2, amplitude: 0.5)
+    let session = try await recording(source: source)
+    #expect(session.level > 0.1)
+    session.pause()
+    #expect(session.level == 0)
+    session.resume()
+    source.push(seconds: 1, amplitude: 0)
+    #expect(await waitUntil { session.level < 0.05 })
+    await session.stop()
+    #expect(session.level == 0)
+}

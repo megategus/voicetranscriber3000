@@ -76,6 +76,9 @@ public final class SessionController {
     public private(set) var noAudio = false
     /// Seconds of audio recorded in this session (paused time not included).
     public private(set) var elapsed: TimeInterval = 0
+    /// Smoothed RMS level of the incoming audio (0 when not recording or paused), for the
+    /// waveform on the Stop button.
+    public private(set) var level: Float = 0
     /// While paused, audio is discarded: not recorded, not transcribed, not timed.
     public private(set) var isPaused = false
     /// Seconds of audio discarded while paused.
@@ -306,6 +309,7 @@ public final class SessionController {
     public func pause() {
         guard state == .recording else { return }
         isPaused = true
+        level = 0
         noAudio = false
         isLagging = false
     }
@@ -325,6 +329,7 @@ public final class SessionController {
         guard state == .recording, let source, let recorder, let writer else { return }
         isPaused = false
         state = .finalizing(.savingAudio)
+        level = 0
         watchdog?.cancel()
         await source.stop()
         await pump?.value
@@ -516,7 +521,9 @@ public final class SessionController {
 
     private func observe(_ chunk: AudioChunk) {
         elapsed = chunk.endTime
-        if AudioLevel.rms(chunk.samples) >= HallucinationFilter.speechThreshold {
+        let rms = AudioLevel.rms(chunk.samples)
+        level = level * 0.5 + rms * 0.5
+        if rms >= HallucinationFilter.speechThreshold {
             lastSpeech = chunk.endTime
             silenceStart = chunk.endTime
             lastLoudWall = clock()
@@ -558,6 +565,7 @@ public final class SessionController {
         isLagging = false
         noAudio = false
         elapsed = 0
+        level = 0
         isPaused = false
         skippedDuration = 0
         recordedSamples = 0

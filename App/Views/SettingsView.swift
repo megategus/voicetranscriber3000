@@ -17,21 +17,23 @@ struct SettingsView: View {
                     .onSubmit(saveKey)
                 HStack {
                     Button("Save", action: saveKey)
+                        .buttonStyle(PillButtonStyle(kind: .filled, large: false))
                         .disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    Button("Remove", role: .destructive, action: removeKey)
+                    Button("Remove", action: removeKey)
+                        .buttonStyle(GhostButtonStyle())
                         .disabled(!hasKey)
                     Spacer()
                     if let keyError {
-                        Text(keyError).foregroundStyle(.red)
+                        Label(keyError, systemImage: "exclamationmark.triangle")
                     } else {
                         Label(hasKey ? "Saved" : "Not set",
                               systemImage: hasKey ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(hasKey ? .green : .secondary)
+                            .foregroundStyle(hasKey ? Theme.ink : Theme.ash)
                     }
                 }
                 Text("Stored in your macOS Keychain. Used for questions and notes.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.graphite)
 
                 Picker("Model", selection: $settings.model) {
                     ForEach(ClaudeModel.allCases, id: \.self) { model in
@@ -44,8 +46,8 @@ struct SettingsView: View {
                     Text("Low").tag("low")
                 }
                 Text("Most of the cost is the notes: Claude's thinking and the written notes are billed as output. Medium effort thinks less and costs less; Sonnet 5.5 costs half as much as Opus 5.5. Each session folder has a usage.md with what it cost.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.graphite)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -55,8 +57,9 @@ struct SettingsView: View {
                         Text(settings.outputFolder.path(percentEncoded: false))
                             .lineLimit(1)
                             .truncationMode(.middle)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.graphite)
                         Button("Choose…", action: chooseFolder)
+                            .buttonStyle(GhostButtonStyle())
                     }
                 }
                 Toggle("Re-transcribe full audio after stopping", isOn: $settings.retranscribeAfterStop)
@@ -64,7 +67,9 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520)
+        .scrollContentBackground(.hidden)
+        .frame(width: 540)
+        .parchmentSurface()
     }
 
     private func saveKey() {

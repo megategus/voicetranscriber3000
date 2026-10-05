@@ -28,3 +28,12 @@ capture and session targets only exist on macOS.
 
 Select the `VoiceTranscriber` target → Signing & Capabilities → set Team to
 your Personal Team (or set `DEVELOPMENT_TEAM` in `project.yml`), then Run (⌘R).
+
+## Design and credits
+
+The interface uses a warm parchment palette (tokens in `App/Design/Theme.swift`): ink text,
+hairline warm-gray borders, and one deep teal reserved for selected states.
+
+The Start / Stop / Pause / Resume pill buttons adapt the "Skiper 25" micro-interaction from
+[Skiper UI](https://gxuri.me) by @gurvinder-singh02 (springy padding on hover and press, a
+five-bar waveform), used under its free license, which requires this attribution.

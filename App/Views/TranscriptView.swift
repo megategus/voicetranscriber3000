@@ -1,8 +1,8 @@
 import SwiftUI
 import TranscriptCore
 
-/// Final lines as `[mm:ss] text`, then the partial line in gray. Follows new text while
-/// the bottom is visible; stays put once the user scrolls up.
+/// Final lines with their timestamps, then the partial line in graphite. Follows new text
+/// while the bottom is visible; stays put once the user scrolls up.
 struct TranscriptView: View {
     let segments: [Segment]
     let partial: String
@@ -13,14 +13,35 @@ struct TranscriptView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 6) {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    if segments.isEmpty, partial.isEmpty {
+                        Text("The live transcript appears here.")
+                            .foregroundStyle(Theme.ash)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.top, Theme.sectionGap)
+                    }
                     ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                        Text(formatLine(segment))
-                            .textSelection(.enabled)
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(formatTimestamp(segment.start))
+                                .font(Theme.timestamp)
+                                .foregroundStyle(Theme.ash)
+                                .frame(minWidth: 40, alignment: .trailing)
+                            Text(segment.text)
+                                .font(Theme.bodyLarge)
+                                .lineSpacing(4)
+                                .foregroundStyle(Theme.ink)
+                                .textSelection(.enabled)
+                        }
                     }
                     if !partial.isEmpty {
-                        Text(partial)
-                            .foregroundStyle(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text("")
+                                .frame(minWidth: 40)
+                            Text(partial)
+                                .font(Theme.bodyLarge)
+                                .lineSpacing(4)
+                                .foregroundStyle(Theme.graphite)
+                        }
                     }
                     Color.clear
                         .frame(height: 1)
@@ -29,8 +50,9 @@ struct TranscriptView: View {
                         .onDisappear { atBottom = false }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+                .padding(Theme.cardPadding)
             }
+            .scrollContentBackground(.hidden)
             .onChange(of: segments.count) { follow(proxy) }
             .onChange(of: partial) { follow(proxy) }
         }
@@ -50,4 +72,5 @@ struct TranscriptView: View {
         ],
         partial: "Next, the chain rule"
     )
+    .parchmentSurface()
 }

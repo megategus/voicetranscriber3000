@@ -13,31 +13,36 @@ struct RecoveryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Unfinished sessions")
-                .font(.title2)
+                .font(Theme.title)
             Text("These sessions were interrupted. Recover finishes them: it saves the audio, writes transcript.md, and generates notes.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.graphite)
                 .fixedSize(horizontal: false, vertical: true)
             ForEach(folders, id: \.self) { folder in
-                HStack {
+                HStack(spacing: Theme.gap) {
                     Text(folder.lastPathComponent)
                     Spacer()
                     Button("Ignore") { ignore(folder) }
+                        .buttonStyle(GhostButtonStyle())
                     Button("Recover") { recover(folder) }
+                        .buttonStyle(PillButtonStyle(kind: .filled, large: false))
                         .disabled(!canRecover)
                 }
+                .card(padding: 12)
             }
             if !canRecover {
                 Text("Recover is available once the speech model has loaded.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.ash)
             }
             HStack {
                 Spacer()
                 Button("Later", action: close)
+                    .buttonStyle(GhostButtonStyle())
                     .keyboardShortcut(.cancelAction)
             }
         }
-        .padding(20)
-        .frame(width: 460)
+        .padding(24)
+        .frame(width: 480)
+        .parchmentSurface()
     }
 }
