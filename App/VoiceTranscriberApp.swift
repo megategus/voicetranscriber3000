@@ -14,7 +14,7 @@ struct VoiceTranscriberApp: App {
         let settings = AppSettings()
         _speechModel = State(initialValue: speechModel)
         _settings = State(initialValue: settings)
-        _session = State(initialValue: SessionController(
+        let session = SessionController(
             root: settings.outputFolder,
             transcriber: speechModel.transcriber,
             makeSource: { kind in
@@ -23,11 +23,15 @@ struct VoiceTranscriberApp: App {
                 case .microphone: MicrophoneSource()
                 }
             },
-            notes: nil,               // Claude notes arrive in Task 12
+            notes: nil,
             retranscribe: { settings.retranscribeAfterStop },
             // The key is read from the Keychain for each request, never stored elsewhere.
             claude: ClaudeClient(apiKey: { KeychainStore.apiKey.load() })
-        ))
+        )
+        // Claude writes the notes; a missing key is reported on the done screen, and
+        // Generate notes works once a key is added.
+        session.notes = session.assistant
+        _session = State(initialValue: session)
     }
 
     var body: some Scene {

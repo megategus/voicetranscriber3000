@@ -4,10 +4,16 @@ import Foundation
 import Observation
 import TranscriptCore
 
-/// Writes study notes from a finished transcript (Claude, in Task 12).
+/// Writes study notes from a finished transcript. `progress` receives the number of
+/// characters generated so far.
 public protocol NotesMaking: Sendable {
-    func makeNotes(transcript: [Segment]) async throws -> (title: String, markdown: String)
+    func makeNotes(
+        transcript: [Segment],
+        progress: @escaping @Sendable (Int) -> Void
+    ) async throws -> (title: String, markdown: String)
 }
+
+extension Assistant: NotesMaking {}
 
 public enum FinalizeStep: Equatable, Sendable {
     case savingAudio
@@ -19,6 +25,8 @@ public struct DoneInfo: Equatable, Sendable {
     public let folder: URL
     public let notesWritten: Bool
     public let message: String?
+    /// The API key is missing or was rejected; the done screen offers Open Settings.
+    public var needsSettings = false
 }
 
 /// Why the last question got no answer, for the Ask panel.
@@ -28,6 +36,16 @@ public enum AskProblem: Equatable, Sendable {
     case unauthorized
     case refused
     case failed(String)
+
+    public var message: String {
+        switch self {
+        case .nothingYet: "Nothing transcribed yet"
+        case .missingKey: "Add your API key in Settings"
+        case .unauthorized: "API key rejected"
+        case .refused: "Claude declined to answer"
+        case .failed(let message): message
+        }
+    }
 }
 
 public enum SessionState: Equatable, Sendable {
@@ -69,6 +87,8 @@ public final class SessionController {
     public private(set) var askAnswer = ""
     public private(set) var askProblem: AskProblem?
     public private(set) var isAsking = false
+    /// Characters of notes received so far, shown while writing notes.
+    public private(set) var notesCharacters = 0
 
     private let transcriber: any Transcriber
     private let makeSource: (AudioSourceKind) -> any AudioSource
@@ -336,25 +356,45 @@ public final class SessionController {
 
     private func writeNotes(writer: SessionWriter, transcript: [Segment], messages: [String]) async {
         var messages = messages
-        func done(_ written: Bool, _ message: String? = nil) {
+        func done(_ written: Bool, _ message: String? = nil, needsSettings: Bool = false) {
             if let message { messages.append(message) }
             state = .done(DoneInfo(
                 folder: writer.folder,
                 notesWritten: written,
-                message: messages.isEmpty ? nil : messages.joined(separator: " ")
+                message: messages.isEmpty ? nil : messages.joined(separator: " "),
+                needsSettings: needsSettings
             ))
         }
+        let missingKey = "Add your API key in Settings to generate notes"
         guard !transcript.isEmpty else { return done(false, "No speech detected") }
-        guard let notes else { return done(false, "Add your API key in Settings to generate notes") }
+        guard let notes else { return done(false, missingKey, needsSettings: true) }
         state = .finalizing(.writingNotes)
+        notesCharacters = 0
         do {
-            let result = try await notes.makeNotes(transcript: transcript)
+            let result = try await notes.makeNotes(transcript: transcript) { count in
+                Task { @MainActor in self.updateNotesCharacters(count) }
+            }
             try writer.writeNotes(result.markdown)
             try writer.rename(title: result.title)
             done(true)
+        } catch AskError.missingKey, ClaudeError.missingKey {
+            done(false, missingKey, needsSettings: true)
+        } catch ClaudeError.unauthorized {
+            done(false, "API key rejected. Check it in Settings, then Generate notes.", needsSettings: true)
+        } catch ClaudeError.refusal {
+            done(false, "Claude declined to write notes for this session.")
+        } catch ClaudeError.truncated {
+            done(false, "The notes were cut off before they were complete. Try Generate notes again.")
+        } catch NotesError.invalidResponse {
+            done(false, "Claude's response could not be read as notes. Try Generate notes again.")
         } catch {
-            done(false, "Could not write notes: \(error.localizedDescription)")
+            done(false, "Could not write notes. \(Self.problem(for: error).message)")
         }
+    }
+
+    private func updateNotesCharacters(_ count: Int) {
+        // Progress callbacks hop here asynchronously and may arrive out of order.
+        notesCharacters = max(notesCharacters, count)
     }
 
     /// Runs the file pass; returns nil if it failed or was cancelled. Cancel returns at

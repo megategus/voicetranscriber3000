@@ -73,3 +73,10 @@ func simpleRequest(effort: String = "low", maxTokens: Int = 4000) -> MessagesReq
 /// one at a time.
 @Suite(.serialized)
 struct StubbedNetworkTests {}
+
+/// An SSE body whose single text delta is `text` (JSON-escaped), then the stop reason.
+func sseBody(text: String, stop: String = "end_turn") -> String {
+    let event: [String: Any] = ["type": "content_block_delta", "index": 0, "delta": ["type": "text_delta", "text": text]]
+    let data = try! JSONSerialization.data(withJSONObject: event)
+    return "data: \(String(decoding: data, as: UTF8.self))\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"\(stop)\"}}\n\n"
+}

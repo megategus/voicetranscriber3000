@@ -1,4 +1,5 @@
 import AVFoundation
+import Testing
 import CaptureKit
 import Foundation
 import SessionKit
@@ -113,8 +114,9 @@ actor FakeNotes: NotesMaking {
         result = .failure(Failure())
     }
 
-    func makeNotes(transcript: [Segment]) async throws -> (title: String, markdown: String) {
+    func makeNotes(transcript: [Segment], progress: @escaping @Sendable (Int) -> Void) async throws -> (title: String, markdown: String) {
         calls.append(transcript)
+        progress(10)
         let (title, markdown) = try result.get()
         return (title, markdown)
     }
@@ -184,3 +186,8 @@ final class HTTPStub: URLProtocol, @unchecked Sendable {
         """
     }
 }
+
+/// Suites that use `HTTPStub` share its static state, so they are nested here and run one
+/// at a time.
+@Suite(.serialized)
+struct StubbedNetworkTests {}

@@ -393,6 +393,8 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
 - [ ] **Step 6:** Manual check: a 10-minute YouTube lecture end to end; `notes.md` follows the structure; folder renamed with the title.
 - [ ] **Step 7:** Commit `feat(assistant): notes generation`.
 
+**As built:** `NotesMaking.makeNotes(transcript:progress:)` takes a character-count callback (for the live count). `extension Assistant: NotesMaking {}` lives in SessionKit (SessionKit depends on AssistantKit, not the reverse). The app always sets `session.notes = session.assistant`; a missing or rejected key ends in `.done` with `DoneInfo.needsSettings == true` and an Open Settings button, so **Generate notes** works once a key is added. Invalid JSON throws `NotesError.invalidResponse`. Stubbed-network suites in each test target are nested under one serialized parent suite.
+
 ### Task 13: Permissions, recovery on launch, floating panel
 
 **Files:**

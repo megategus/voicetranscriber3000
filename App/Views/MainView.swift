@@ -132,7 +132,10 @@ struct MainView: View {
                 Button("Cancel") { session.cancelRetranscription() }
             case .writingNotes:
                 ProgressView().controlSize(.small)
-                Text("Writing notes…")
+                Text(session.notesCharacters > 0
+                     ? "Writing notes… \(session.notesCharacters.formatted()) characters"
+                     : "Writing notes…")
+                    .monospacedDigit()
             }
             Spacer()
         }
@@ -157,6 +160,9 @@ struct MainView: View {
                     }
                 } else if session.canGenerateNotes {
                     Button("Generate notes") { Task { await session.generateNotes() } }
+                    if info.needsSettings {
+                        SettingsLink { Text("Open Settings") }
+                    }
                 }
             }
         }

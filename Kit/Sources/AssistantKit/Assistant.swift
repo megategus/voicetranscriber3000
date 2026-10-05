@@ -18,7 +18,7 @@ public enum AskError: Error, Equatable {
 public final class Assistant: Sendable {
     public static let recentWindow: TimeInterval = 300
 
-    private let client: ClaudeClient
+    let client: ClaudeClient
     private let store: TranscriptStore
 
     public init(client: ClaudeClient, store: TranscriptStore) {
@@ -75,5 +75,46 @@ public final class Assistant: Sendable {
 
     private static func part(_ text: String) -> String {
         "<transcript_part>\n\(text)\n</transcript_part>"
+    }
+}
+
+public enum NotesError: Error, Equatable {
+    /// The response was not the expected JSON (for example, cut off mid-object).
+    case invalidResponse
+}
+
+extension Assistant {
+    /// Writes study notes from the whole transcript in one request. `progress` receives the
+    /// number of characters received so far.
+    public func makeNotes(
+        transcript: [Segment],
+        progress: @escaping @Sendable (Int) -> Void
+    ) async throws -> (title: String, markdown: String) {
+        guard client.hasKey else { throw AskError.missingKey }
+        var text = ""
+        for try await delta in client.stream(buildNotesRequest(transcript: transcript)) {
+            text += delta
+            progress(text.count)
+        }
+        struct Notes: Decodable {
+            let title: String
+            let notes_markdown: String
+        }
+        guard let notes = try? JSONDecoder().decode(Notes.self, from: Data(text.utf8)),
+              !notes.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !notes.notes_markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { throw NotesError.invalidResponse }
+        return (notes.title.trimmingCharacters(in: .whitespacesAndNewlines), notes.notes_markdown)
+    }
+
+    public func buildNotesRequest(transcript: [Segment]) -> MessagesRequest {
+        let lines = transcript.map(formatLine).joined(separator: "\n")
+        return MessagesRequest(
+            maxTokens: 64000,
+            system: [TextBlock(text: Prompts.notesSystem, cached: false)],
+            messages: [Message(role: "user", content: [TextBlock(text: "<transcript>\n\(lines)\n</transcript>", cached: false)])],
+            effort: "high",
+            jsonSchema: Prompts.notesSchema
+        )
     }
 }
