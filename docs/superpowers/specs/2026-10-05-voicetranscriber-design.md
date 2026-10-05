@@ -106,6 +106,9 @@ enum AudioSourceKind { case computerAudio, microphone }
 
 - Audio chunks append to a rolling buffer. About every 1 s, the
   transcriber decodes the unconfirmed region of the buffer (capped at 30 s).
+- **Stalled confirmation:** if unconfirmed audio exceeds 25 s, every segment
+  of the latest decode except the last is confirmed as is, so the 30 s cap
+  never drops audio from the live transcript.
 - **Confirmation rule:** a segment becomes final when two consecutive
   decodes agree on it. Final segments are emitted as `.final`, never
   revised, and the buffer is trimmed past them. The remaining text is
@@ -148,8 +151,13 @@ Transcript line format: `[mm:ss] text` (`[h:mm:ss]` past one hour).
   and `fallbacks: "default"`. Always check `stop_reason` before using content.
 - **Transcript blocks for caching:** the transcript is sent as a list of
   text content blocks, one per 5-minute window. Completed windows are
-  byte-stable. `cache_control: {type: "ephemeral"}` is placed on the last
-  *completed* block; the in-progress block and the question follow it.
+  byte-stable. A window is *completed* only when its time has passed **and**
+  a final segment from a later window exists, because final text arrives
+  2–4 s after the audio and could otherwise change a block already sent.
+  Silent windows are kept as empty strings so window numbers never shift,
+  but empty blocks are left out of requests (the API rejects empty text
+  blocks). `cache_control: {type: "ephemeral"}` is placed on the last
+  non-empty completed block; the in-progress block and the question follow it.
 
 ### 6.2 Ask (during recording)
 

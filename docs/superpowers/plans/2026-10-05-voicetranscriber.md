@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Platform: macOS 14.0 minimum, Apple Silicon only. `platforms: [.macOS(.v14)]`.
+- Platform: macOS 14.0 minimum, Apple Silicon only. `platforms: [.macOS(.v14)]`. `CaptureKit` and `SessionKit` (and their tests and the WhisperKit dependency) are declared inside `#if os(macOS)` in `Package.swift`, so `TranscriptCore` and `AssistantKit` tests also run on Linux. Neither of those two targets may import Apple-only frameworks (AVFoundation, Security, ScreenCaptureKit).
 - Swift language mode 6 (strict concurrency).
 - Audio format inside the app: 16 000 Hz, mono, Float32.
 - Whisper model: `large-v3-turbo`; decoding language forced to `"en"`.
@@ -124,7 +124,7 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
   - `completedBlocksAreStable`: take `completedBlocks(now: 700)`, append a segment at 680 s, call again with `now: 720` → the first two strings are byte-identical to before.
   - `textFromTimestamp`: `text(from: 300)` contains only lines starting at or after 300 s.
 - [ ] **Step 2:** Run `swift test --filter TranscriptCoreTests` → FAIL (symbols missing).
-- [ ] **Step 3:** Implement. A segment belongs to block `Int(segment.start / blockDuration)`. A block is complete when `now >= (index + 1) * blockDuration`. Block text is the segments' `formatLine` joined by `"\n"`. `append` inserts sorted by `start`.
+- [ ] **Step 3:** Implement. A segment belongs to block `Int(segment.start / blockDuration)`. A block is complete when `now >= (index + 1) * blockDuration` **and** its index is lower than the block index of the last segment (finals arrive 2–4 s late, so the clock alone would let a late segment change a block that was already sent and cached). Windows with no speech are returned as `""` so indices stay stable. Extra test `blockStaysOpenUntilLaterSpeechArrives`: segments at 10 s; `completedBlocks(now: 302)` is empty; append 298 s → still empty at 303; append 305 s → at 306 returns one block containing the 10 s and 298 s lines. Extra test `completedBlocksIncludeEmptyWindows`: segments at 10 s and 650 s, `now: 700` → `["[00:10] at 10", ""]`. Block text is the segments' `formatLine` joined by `"\n"`. `append` inserts sorted by `start`.
 - [ ] **Step 4:** Run tests → PASS.
 - [ ] **Step 5:** Commit `feat(core): timestamps and transcript store`.
 
@@ -143,7 +143,7 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
   - `confirmsWhenTwoDecodesAgree`: ingest `[A("Hello world"), B("this is")]` → no confirmed; ingest `[A("Hello world"), B("this is a test")]` → confirmed == `[A]`, partial == `"this is a test"`.
   - `doesNotConfirmChangedText`: ingest `[A("Hello word")]`, then `[A("Hello world")]` → confirmed empty; then `[A("Hello world")]` → confirmed `[A("Hello world")]`.
   - `neverReconfirms`: after A is confirmed, ingest `[A, B]`, `[A, B]` → B confirmed, A not emitted again (filter by `start >= confirmedEnd`).
-  - `lastSegmentNeverConfirmedAlone`: the final segment of a decode is never confirmed (it may still be growing) unless `ingest` is followed by `flush() -> [Segment]`, which confirms everything left. Test `flush` returns the remaining segment.
+  - `singleDecodeConfirmsNothingUntilFlush`: after one `ingest`, nothing is confirmed; `flush()` returns all its segments, and a second `flush()` returns `[]`. (A lone segment *is* confirmed after two identical decodes, per `doesNotConfirmChangedText`; otherwise the speaker's last sentence would stay gray during every pause.)
   - `dropsKnownPhraseWhenQuiet`: `shouldDrop(seg(0, " Thank you."), rmsEnergy: 0.001) == true`.
   - `keepsKnownPhraseWhenSpeech`: same text, `rmsEnergy: 0.05` → `false`.
   - `keepsNormalTextWhenQuiet`: `"The derivative of x squared"`, energy 0.001 → `false`.
@@ -228,6 +228,7 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
 
 **Interfaces:**
 - Consumes: `AudioChunk`, `SegmentConfirmer`, `HallucinationFilter`, `AudioLevel`, `TranscriptEvent`.
+- Modifies: `Kit/Sources/TranscriptCore/SegmentConfirmer.swift` — adds `mutating func confirmAllButLast() -> [Segment]` (confirms every segment from the last decode except its final one; returns them; updates `confirmedEnd`). Test in `SegmentConfirmerTests`: `confirmAllButLastLeavesTail`: after `ingest([A("one"), B("two"), seg(4, "three")])`, `confirmAllButLast() == [A("one"), B("two")]`, `confirmedEnd == 4`, and a following `flush() == [seg(4, "three")]`.
 - Produces:
   - `protocol Transcriber: Sendable { func load(progress: @Sendable (Double) -> Void) async throws; func transcribe(_ audio: AsyncStream<AudioChunk>) -> AsyncStream<TranscriptEvent>; func transcribeFile(_ url: URL, progress: @Sendable (Double) -> Void) async throws -> [Segment] }`
   - `final class WhisperKitTranscriber: Transcriber` with `init(model: String = "large-v3-turbo")`.
@@ -238,7 +239,7 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
   - `fileTranscriptionAccuracy`: `transcribeFile(librivox-clip.m4a)`; joined text vs `librivox-clip.txt` (lowercased, punctuation stripped) → WER < 0.10. Mark with `.timeLimit(.minutes(10))`.
   - `liveTranscriptionMatchesFile`: feed the same clip as 0.5 s `AudioChunk`s into `transcribe`; collect `.final` segments; WER < 0.15; final segments strictly increasing by `start`.
 - [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3:** Implement. Decode options: `language: "en"`, `task: .transcribe`, word timestamps off, temperature fallback on. Live loop: keep a `[Float]` buffer from `confirmedEnd`; every 1 s, if `AudioLevel.rms` of the newest 1 s is below `HallucinationFilter.speechThreshold` and no unconfirmed text exists, skip the decode; otherwise decode at most the latest 30 s, shift timestamps by the buffer's start offset, pass to `SegmentConfirmer.ingest`, drop confirmed segments where `HallucinationFilter.shouldDrop` returns true (energy measured over that segment's samples), yield `.final` per confirmed segment and `.partial` for the rest, trim the buffer to `confirmedEnd`. When the input stream ends, call `flush()` and yield those as `.final`.
+- [ ] **Step 3:** Implement. Decode options: `language: "en"`, `task: .transcribe`, word timestamps off, temperature fallback on. Live loop: keep a `[Float]` buffer from `confirmedEnd`; every 1 s, if `AudioLevel.rms` of the newest 1 s is below `HallucinationFilter.speechThreshold` and no unconfirmed text exists, skip the decode; otherwise decode at most the latest 30 s, shift timestamps by the buffer's start offset, pass to `SegmentConfirmer.ingest`, drop confirmed segments where `HallucinationFilter.shouldDrop` returns true (energy measured over that segment's samples), yield `.final` per confirmed segment and `.partial` for the rest, trim the buffer to `confirmedEnd`. If the buffer still holds more than 25 s of audio after that (confirmation stalled because Whisper keeps shifting segment boundaries), call `confirmAllButLast()` and yield those as `.final` before the next decode, so the 30 s cap never drops audio. When the input stream ends, call `flush()` and yield those as `.final`.
 - [ ] **Step 4:** Run → PASS.
 - [ ] **Step 5:** App: create the transcriber at launch and call `load`; Start is disabled with a progress label "Loading speech model… NN%" until loaded. `TranscriptView` lists final lines as `[mm:ss] text` and shows the partial line in secondary color, auto-scrolling to the bottom unless the user has scrolled up.
 - [ ] **Step 6:** Manual check: play a lecture on YouTube, Start (Computer audio), watch lines appear within about 4 s.
@@ -343,8 +344,10 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
   - `Prompts.askSystem: String` (frozen text).
 
 - [ ] **Step 1: Failing tests**
-  - `askRequestPutsCacheOnLastCompletedBlock`: store with segments spanning 0–700 s; `buildAskRequest(now: 700)` → user message content = `[block0, block1(cached), currentBlock, question]`; only block1 has `cached == true`; system block cached.
+  - `askRequestPutsCacheOnLastCompletedBlock`: segments at 10, 290, 310, 650 s; `buildAskRequest(now: 700)` → user message content = `[block0, block1(cached), currentBlock, question]`; only block1 has `cached == true`; system block cached.
+  - `askRequestSkipsEmptyBlocks`: segments at 10 s and 650 s (window 1 is silent); `buildAskRequest(now: 700)` → content = `[block0(cached), currentBlock, question]`; no block has empty text; the cache marker is on the last *non-empty* completed block.
   - `askRequestWithNoCompletedBlocks`: segments only in the first 5 minutes → no transcript block is cached; system block cached.
+  - `askRequestNeverSendsEmptyText`: when `currentBlock` is `""`, it is omitted rather than sent as an empty block.
   - `askWithEmptyTranscriptDoesNotCallAPI`: empty store → throws `AskError.nothingYet`; URL stub saw zero requests.
   - `askWithoutKeyReturnsMissingKey`: non-empty store, nil key → throws `AskError.missingKey`.
   - `quickActionsBuildExpectedQuestions`: `summarizeLast5` at now = 900 → question contains "from [10:00]"; `whatDidIMiss(since: 120)` → "since [02:00]"; `whatDidIMiss(since: nil)` at 900 → "since [10:00]".
