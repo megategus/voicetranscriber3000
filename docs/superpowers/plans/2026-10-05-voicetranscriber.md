@@ -197,7 +197,7 @@ How to run tests (on the Mac): `cd Kit && swift test`. The app: `xcodegen genera
 - [ ] **Step 1: Failing tests**
   - `rmsOfSilenceIsZero`, `rmsOfFullScaleSineIsAbout0_707` (tolerance 0.01).
   - `recorderWritesAndConvertsSine`: write 3 s of a 440 Hz sine in 0.5 s chunks, `finish` → `.m4a` exists, `AVAudioFile(forReading:)` duration within 0.1 s of 3.0, `.caf` deleted.
-  - `pcmConverterDownsamples48kStereo`: a 48 kHz stereo buffer of 4800 frames → 1600 samples.
+  - `pcmConverterDownsamples48kStereo`: ten 48 kHz stereo buffers of 4800 frames (1 s) → between 16 000 − 1 366 and 16 000 samples in total, RMS of a full-scale sine ≈ 0.707. (`AVAudioConverter` resamples in 4096-frame slices and holds back up to one slice until the next buffer arrives, so a single buffer does not give exactly 1600; the total never drifts.)
 - [ ] **Step 2:** Run → FAIL.
 - [ ] **Step 3:** Implement. `MicrophoneSource`: `AVAudioEngine.inputNode.installTap(bufferSize: 4096)`, convert with `PCMConverter`, yield chunks with a running `startSample`; observe `.AVAudioEngineConfigurationChange` and restart the engine and the tap (sample counter continues). `AudioRecorder`: `AVAudioFile` in CAF, 16 kHz mono Float32; convert with `AVAssetExportSession` preset `AVAssetExportPresetAppleM4A`.
 - [ ] **Step 4:** Run → PASS.
