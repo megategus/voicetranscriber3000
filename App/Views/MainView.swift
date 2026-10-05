@@ -5,17 +5,26 @@ import TranscriptCore
 
 struct MainView: View {
     @State private var recording = DebugRecording()
+    @State private var sourceKind: AudioSourceKind = .computerAudio
 
     var body: some View {
         VStack(spacing: 16) {
             Text("VoiceTranscriber")
                 .font(.largeTitle)
+            Picker("Source", selection: $sourceKind) {
+                ForEach(AudioSourceKind.allCases, id: \.self) { kind in
+                    Text(kind.displayName).tag(kind)
+                }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+            .disabled(recording.isRecording || recording.isBusy)
             Button(recording.isRecording ? "Stop" : "Start") {
                 Task {
                     if recording.isRecording {
                         await recording.stop()
                     } else {
-                        await recording.start()
+                        await recording.start(kind: sourceKind)
                     }
                 }
             }
@@ -38,29 +47,41 @@ struct MainView: View {
     }
 }
 
-/// Temporary microphone recording for Task 5; replaced by SessionController in Task 8.
+/// Temporary recording for Tasks 5–6; replaced by SessionController in Task 8.
 @MainActor @Observable
 final class DebugRecording {
     private(set) var isRecording = false
     private(set) var isBusy = false
-    private(set) var status = "Records the microphone to audio.m4a."
+    private(set) var status = "Records the chosen source to audio.m4a."
     private(set) var folder: URL?
 
-    private var source: MicrophoneSource?
+    private var source: (any AudioSource)?
     private var recorder: AudioRecorder?
     private var writer: SessionWriter?
     private var pump: Task<Void, Never>?
 
-    func start() async {
+    func start(kind: AudioSourceKind) async {
         isBusy = true
         defer { isBusy = false }
         do {
             let root = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Documents/Transcripts", isDirectory: true)
-            let writer = try SessionWriter.create(root: root, date: .now)
-            let recorder = try AudioRecorder(cafURL: writer.audioCAF)
-            let source = MicrophoneSource()
+            let source: any AudioSource = switch kind {
+            case .computerAudio: SystemAudioSource()
+            case .microphone: MicrophoneSource()
+            }
+            // Start the source first so a denied permission leaves no empty folder;
+            // chunks wait in the stream until the recorder exists.
             let chunks = try await source.start()
+            let writer: SessionWriter
+            let recorder: AudioRecorder
+            do {
+                writer = try SessionWriter.create(root: root, date: .now)
+                recorder = try AudioRecorder(cafURL: writer.audioCAF)
+            } catch {
+                await source.stop()
+                throw error
+            }
             pump = Task {
                 for await chunk in chunks {
                     try? await recorder.write(chunk)

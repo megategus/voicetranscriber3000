@@ -74,3 +74,31 @@ public final class PCMConverter {
         return samples
     }
 }
+
+extension AVAudioPCMBuffer {
+    /// Copies the PCM audio in a `CMSampleBuffer` (as delivered by ScreenCaptureKit)
+    /// into a new buffer with the same format.
+    static func from(_ sampleBuffer: CMSampleBuffer) throws -> AVAudioPCMBuffer {
+        guard let description = sampleBuffer.formatDescription,
+              description.mediaType == .audio
+        else {
+            throw AudioCaptureError.unsupportedFormat
+        }
+        let format = AVAudioFormat(cmAudioFormatDescription: description)
+        let frames = AVAudioFrameCount(sampleBuffer.numSamples)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
+            throw AudioCaptureError.conversionFailed("could not allocate buffer")
+        }
+        buffer.frameLength = frames
+        let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sampleBuffer,
+            at: 0,
+            frameCount: Int32(frames),
+            into: buffer.mutableAudioBufferList
+        )
+        guard status == noErr else {
+            throw AudioCaptureError.conversionFailed("CMSampleBuffer copy failed (\(status))")
+        }
+        return buffer
+    }
+}
